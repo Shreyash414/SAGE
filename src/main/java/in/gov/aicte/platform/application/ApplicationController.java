@@ -161,11 +161,13 @@ public class ApplicationController {
     })
     public ResponseEntity<Resource> downloadDocument(
             @PathVariable Long id,
-            @PathVariable Long documentId
+            @PathVariable Long documentId,
+            @RequestParam(name = "inline", defaultValue = "false") boolean inline
     ) {
         ApplicationSubmissionService.DocumentDownloadPayload payload = submissionService.downloadDocument(id, documentId);
 
-        String contentDisposition = String.format("attachment; filename=\"%s\"", payload.originalFileName().replace("\"", ""));
+        String disposition = inline ? "inline" : "attachment";
+        String contentDisposition = String.format("%s; filename=\"%s\"", disposition, payload.originalFileName().replace("\"", ""));
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(payload.contentType()))
                 .contentLength(payload.fileSize())

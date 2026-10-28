@@ -504,6 +504,152 @@ export const DataProvider = ({ children }) => {
     );
   };
 
+  // ---------------------------------------------------------------------------
+  // Automated Scrutiny & Re-Scrutiny Engine API Integrations
+  // ---------------------------------------------------------------------------
+  const runAutomatedScrutiny = async (applicationId) => {
+    try {
+      const result = await apiClient(`/applications/${applicationId}/scrutiny/run`, {
+        method: 'POST',
+      });
+      return { success: true, data: result };
+    } catch (err) {
+      console.error('Failed to run automated scrutiny:', err);
+      return { success: false, error: err.message || 'Scrutiny run failed' };
+    }
+  };
+
+  const runAutomatedRescrutiny = async (applicationId) => {
+    try {
+      const result = await apiClient(`/applications/${applicationId}/scrutiny/rescrutiny`, {
+        method: 'POST',
+      });
+      return { success: true, data: result };
+    } catch (err) {
+      console.error('Failed to run automated re-scrutiny:', err);
+      return { success: false, error: err.message || 'Re-scrutiny run failed' };
+    }
+  };
+
+  const fetchScrutinyReport = async (applicationId) => {
+    try {
+      const result = await apiClient(`/applications/${applicationId}/scrutiny/report`);
+      return { success: true, data: result };
+    } catch (err) {
+      console.error('Failed to fetch scrutiny report:', err);
+      return { success: false, error: err.message || 'Failed to fetch report' };
+    }
+  };
+
+  const fetchScrutinyExtractions = async (applicationId) => {
+    try {
+      const result = await apiClient(`/applications/${applicationId}/scrutiny/extractions`);
+      return { success: true, data: result };
+    } catch (err) {
+      console.error('Failed to fetch scrutiny extractions:', err);
+      return { success: false, error: err.message || 'Failed to fetch extractions' };
+    }
+  };
+
+  const fetchScrutinyAssessments = async (applicationId) => {
+    try {
+      const result = await apiClient(`/applications/${applicationId}/scrutiny/assessments`);
+      return { success: true, data: result };
+    } catch (err) {
+      console.error('Failed to fetch scrutiny assessments:', err);
+      return { success: false, error: err.message || 'Failed to fetch assessments' };
+    }
+  };
+
+  const reviewScrutinyFinding = async (applicationId, findingId, payload) => {
+    try {
+      const result = await apiClient(`/applications/${applicationId}/scrutiny/findings/${findingId}/review`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      return { success: true, data: result };
+    } catch (err) {
+      console.error('Failed to review scrutiny finding:', err);
+      return { success: false, error: err.message || 'Failed to record finding review' };
+    }
+  };
+
+  const fetchDeficiencies = async (applicationId) => {
+    try {
+      const result = await apiClient(`/applications/${applicationId}/deficiencies`);
+      return { success: true, data: result };
+    } catch (err) {
+      console.error('Failed to fetch deficiencies:', err);
+      return { success: false, error: err.message || 'Failed to fetch deficiencies' };
+    }
+  };
+
+  const issueDeficiencyNotice = async (applicationId, payload) => {
+    try {
+      const result = await apiClient(`/applications/${applicationId}/deficiencies/issue`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      await fetchApplicationsFromBackend();
+      return { success: true, data: result };
+    } catch (err) {
+      console.error('Failed to issue deficiency notice:', err);
+      return { success: false, error: err.message || 'Failed to issue deficiency notice' };
+    }
+  };
+
+  const uploadCorrectedDocument = async (applicationId, deficiencyId, file) => {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const result = await apiClient(`/applications/${applicationId}/deficiencies/${deficiencyId}/documents`, {
+        method: 'POST',
+        body: formData,
+      });
+      return { success: true, data: result };
+    } catch (err) {
+      console.error('Failed to upload corrected document:', err);
+      return { success: false, error: err.message || 'Document upload failed' };
+    }
+  };
+
+  const submitDeficiencyResponses = async (applicationId, payload) => {
+    try {
+      const result = await apiClient(`/applications/${applicationId}/deficiencies/submit-responses`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      await fetchApplicationsFromBackend();
+      return { success: true, data: result };
+    } catch (err) {
+      console.error('Failed to submit deficiency responses:', err);
+      return { success: false, error: err.message || 'Response submission failed' };
+    }
+  };
+
+  const reviewDeficiency = async (applicationId, deficiencyId, payload) => {
+    try {
+      const result = await apiClient(`/applications/${applicationId}/deficiencies/${deficiencyId}/review`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      return { success: true, data: result };
+    } catch (err) {
+      console.error('Failed to review deficiency:', err);
+      return { success: false, error: err.message || 'Deficiency review failed' };
+    }
+  };
+
+  const fetchRescrutinyComparisons = async (applicationId) => {
+    try {
+      const result = await apiClient(`/applications/${applicationId}/scrutiny/comparison`);
+      return { success: true, data: result };
+    } catch (err) {
+      console.error('Failed to fetch re-scrutiny comparisons:', err);
+      return { success: false, error: err.message || 'Failed to fetch comparison' };
+    }
+  };
+
   const refreshAllData = async () => {
     await Promise.all([
       fetchApplicationsFromBackend(),
@@ -544,6 +690,18 @@ export const DataProvider = ({ children }) => {
         markAlertRead,
         acknowledgeAlert,
         retryNotification,
+        runAutomatedScrutiny,
+        runAutomatedRescrutiny,
+        fetchScrutinyReport,
+        fetchScrutinyExtractions,
+        fetchScrutinyAssessments,
+        reviewScrutinyFinding,
+        fetchDeficiencies,
+        issueDeficiencyNotice,
+        uploadCorrectedDocument,
+        submitDeficiencyResponses,
+        reviewDeficiency,
+        fetchRescrutinyComparisons,
       }}
     >
       {children}

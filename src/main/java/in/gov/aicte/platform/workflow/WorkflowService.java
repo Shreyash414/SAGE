@@ -31,19 +31,22 @@ public class WorkflowService {
     private final AuditEventRepository auditEventRepository;
     private final ObjectMapper objectMapper;
     private final EvcService evcService;
+    private final in.gov.aicte.platform.scrutiny.repository.ScrutinyDeficiencyRepository scrutinyDeficiencyRepository;
 
     public WorkflowService(
             ApplicationRepository applicationRepository,
             WorkflowTransitionRepository workflowTransitionRepository,
             AuditEventRepository auditEventRepository,
             ObjectMapper objectMapper,
-            EvcService evcService
+            EvcService evcService,
+            in.gov.aicte.platform.scrutiny.repository.ScrutinyDeficiencyRepository scrutinyDeficiencyRepository
     ) {
         this.applicationRepository = applicationRepository;
         this.workflowTransitionRepository = workflowTransitionRepository;
         this.auditEventRepository = auditEventRepository;
         this.objectMapper = objectMapper;
         this.evcService = evcService;
+        this.scrutinyDeficiencyRepository = scrutinyDeficiencyRepository;
     }
 
     @Transactional
@@ -113,12 +116,27 @@ public class WorkflowService {
                 application.setStatus(toStatus);
                 application.setOwnerName("B. Singh (Scrutiny Officer)");
                 application.setOwnerId("USR-SO-01");
-                application.setDeficienciesJson(null); // Cleared upon resubmission
+                // Preserve deficienciesJson: Submitting corrections must NOT automatically erase or resolve deficiencies.
+                // The deficiency records and history are retained until officially reviewed and cleared.
+                if (request.observations() != null && !request.observations().isBlank()) {
+                    application.setObservations(request.observations().trim());
+                }
             }
 
             case "COMPLETE_SCRUTINY" -> {
                 if (!"Scrutiny".equalsIgnoreCase(fromStage) && !"Re-scrutiny".equalsIgnoreCase(fromStage)) {
                     throw new IllegalArgumentException(String.format("Cannot clear scrutiny from stage '%s'. Must be in Scrutiny or Re-scrutiny.", fromStage));
+                }
+
+                // Completion safeguard: Check for unresolved blocking deficiencies
+                long unresolvedBlocking = scrutinyDeficiencyRepository.countByApplicationIdAndBlockingTrueAndStatusIn(
+                        application.getId(), List.of("ISSUED", "RESPONSE_SUBMITTED")
+                );
+                if (unresolvedBlocking > 0) {
+                    throw new IllegalStateException(String.format(
+                            "Cannot complete scrutiny: Application has %d unresolved blocking deficiency(ies). All blocking deficiencies must be rectified and verified/cleared by the Scrutiny Officer before completing scrutiny.",
+                            unresolvedBlocking
+                    ));
                 }
 
                 toStage = (request.nextStage() != null && !request.nextStage().isBlank()) ? request.nextStage().trim() : "EVC scheduling";

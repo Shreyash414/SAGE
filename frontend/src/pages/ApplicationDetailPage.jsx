@@ -25,11 +25,12 @@ import {
   History,
   FileCheck,
 } from 'lucide-react';
+import { AutomatedScrutinyPanel } from '../components/scrutiny/AutomatedScrutinyPanel';
 
 export const ApplicationDetailPage = () => {
   const { id } = useParams();
   const { user, role } = useAuth();
-  const { getApplicationById, performWorkflowAction, evc, compliance, activity } = useData();
+  const { getApplicationById, performWorkflowAction, evc, compliance, activity, refreshAllData } = useData();
 
   const app = getApplicationById(id);
 
@@ -188,8 +189,9 @@ export const ApplicationDetailPage = () => {
 
   const tabs = [
     { key: 'Overview', label: 'Overview' },
-    { key: 'Timeline', label: 'Workflow Timeline', count: app.timeline?.length || 0 },
+    { key: 'AutomatedScrutiny', label: 'Automated Scrutiny (AICTE)' },
     { key: 'Scrutiny', label: 'Scrutiny & Observations' },
+    { key: 'Timeline', label: 'Workflow Timeline', count: app.timeline?.length || 0 },
     { key: 'Submissions', label: 'Submissions', count: app.submissions?.length || 0 },
     { key: 'EVC', label: 'EVC Activity', count: linkedEVC ? 1 : 0 },
     { key: 'Compliance', label: 'Compliance Obligations', count: linkedCompliance.length },
@@ -499,11 +501,19 @@ export const ApplicationDetailPage = () => {
             </div>
           )}
 
+          {/* TAB: AUTOMATED SCRUTINY */}
+          {activeTab === 'AutomatedScrutiny' && (
+            <AutomatedScrutinyPanel application={app} onScrutinyComplete={refreshAllData} />
+          )}
+
           {/* TAB 3: SCRUTINY & OBSERVATIONS */}
           {activeTab === 'Scrutiny' && (
             <div>
-              <div className="callout callout-blue" style={{ marginBottom: '16px' }}>
-                <strong>Official Scrutiny Desk:</strong> Technical checklist verification in accordance with AICTE Approval Process Handbook (APH) norms.
+              {/* Automated Scrutiny Intelligence Section */}
+              <AutomatedScrutinyPanel application={app} onScrutinyComplete={refreshAllData} />
+
+              <div className="callout callout-blue" style={{ marginTop: '20px', marginBottom: '16px' }}>
+                <strong>Manual Desk Observations:</strong> Additional checklist verification and officer remarks in accordance with AICTE Approval Process Handbook (APH) norms.
               </div>
 
               {/* Interactive Checklist */}

@@ -39,8 +39,8 @@
 @SET __MVNW_PSMODULEP_SAVE=
 @SET __MVNW_ARG0_NAME__=
 @SET MVNW_USERNAME=
-@SET MVNW_PASSWORD=
-@IF NOT "%__MVNW_CMD__%"=="" ("%__MVNW_CMD__%" %*)
+@IF NOT "%__MVNW_CMD__%"=="" ("%__MVNW_CMD__%" %* & exit /b 0)
+@IF EXIST "%USERPROFILE%\.m2\wrapper\dists\apache-maven-3.9.14-bin\1cb7fhup6b5n3bed6kckbrnspv\apache-maven-3.9.14\bin\mvn.cmd" ("%USERPROFILE%\.m2\wrapper\dists\apache-maven-3.9.14-bin\1cb7fhup6b5n3bed6kckbrnspv\apache-maven-3.9.14\bin\mvn.cmd" %* & exit /b 0)
 @echo Cannot start maven from wrapper >&2 && exit /b 1
 @GOTO :EOF
 : end batch / begin powershell #>
