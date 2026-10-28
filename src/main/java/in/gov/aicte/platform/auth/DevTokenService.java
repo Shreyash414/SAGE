@@ -96,6 +96,16 @@ public class DevTokenService {
                 "Competent Authority / Advisor Approval"
         ));
         registerUser(new DevUserDto(
+                "USR-EVCM-01",
+                "Dr. Arvind Saxena",
+                "member.evc@aicte-india.gov.in",
+                "EVC Member",
+                "Northern Region",
+                null,
+                null,
+                "Professor & Subject Specialist"
+        ));
+        registerUser(new DevUserDto(
                 "USR-ADM-01",
                 "System Administrator",
                 "admin@aicte-india.gov.in",

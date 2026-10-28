@@ -11,6 +11,7 @@ const ROLE_DEFAULT_EMAILS = {
   [ROLES.REGIONAL_OFFICER]: 'ro.north@aicte-india.gov.in',
   [ROLES.SCRUTINY_OFFICER]: 'scrutiny.north@aicte-india.gov.in',
   [ROLES.EVC_COORDINATOR]: 'evc.coord@aicte-india.gov.in',
+  [ROLES.EVC_MEMBER]: 'member.evc@aicte-india.gov.in',
   [ROLES.COMPLIANCE_REVIEWER]: 'compliance.rev@aicte-india.gov.in',
   [ROLES.SENIOR_MANAGEMENT]: 'advisor.approval@aicte-india.gov.in',
 };

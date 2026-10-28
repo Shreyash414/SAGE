@@ -27,6 +27,7 @@ const ROLES = [
   'Regional Officer',
   'Scrutiny Officer',
   'EVC Coordinator',
+  'EVC Member',
   'Compliance Reviewer',
   'Senior Management'
 ];

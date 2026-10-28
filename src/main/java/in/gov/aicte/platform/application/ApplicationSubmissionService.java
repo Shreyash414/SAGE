@@ -44,6 +44,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 @Service
@@ -61,6 +62,7 @@ public class ApplicationSubmissionService {
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
     private final WorkflowService workflowService;
+    private final in.gov.aicte.platform.evc.EvcService evcService;
 
     public ApplicationSubmissionService(
             ApplicationRepository applicationRepository,
@@ -74,6 +76,24 @@ public class ApplicationSubmissionService {
             ObjectMapper objectMapper,
             WorkflowService workflowService
     ) {
+        this(applicationRepository, documentRepository, minioStorageService, validator, catalogue,
+                transitionRepository, auditEventRepository, userRepository, objectMapper, workflowService, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public ApplicationSubmissionService(
+            ApplicationRepository applicationRepository,
+            ApplicationDocumentRepository documentRepository,
+            MinioStorageService minioStorageService,
+            ApplicationSubmissionValidator validator,
+            ApplicationTypeCatalogue catalogue,
+            WorkflowTransitionRepository transitionRepository,
+            AuditEventRepository auditEventRepository,
+            UserRepository userRepository,
+            ObjectMapper objectMapper,
+            WorkflowService workflowService,
+            @org.springframework.context.annotation.Lazy in.gov.aicte.platform.evc.EvcService evcService
+    ) {
         this.applicationRepository = applicationRepository;
         this.documentRepository = documentRepository;
         this.minioStorageService = minioStorageService;
@@ -84,6 +104,7 @@ public class ApplicationSubmissionService {
         this.userRepository = userRepository;
         this.objectMapper = objectMapper;
         this.workflowService = workflowService;
+        this.evcService = evcService;
     }
 
     @Transactional
@@ -427,6 +448,19 @@ public class ApplicationSubmissionService {
                     log.warn("Security violation: User {} of institution {} attempted to access application {} belonging to institution {}",
                             user.id(), user.institutionId(), applicationId, inst.getInstitutionalIdentifier());
                     throw new AccessDeniedException("Access denied: You are not authorized to view or modify applications of another institution.");
+                }
+            }
+        }
+
+        if (auth != null) {
+            boolean isEvcMember = auth.getAuthorities().stream()
+                    .anyMatch(a -> "ROLE_EVC_MEMBER".equalsIgnoreCase(a.getAuthority()));
+            if (isEvcMember && evcService != null) {
+                List<in.gov.aicte.platform.evc.EvcVisit> assigned = evcService.getVisitsAssignedToMember(auth.getName());
+                boolean isAssignedToApp = assigned.stream()
+                        .anyMatch(v -> v.getApplication() != null && Objects.equals(v.getApplication().getId(), applicationId));
+                if (!isAssignedToApp) {
+                    throw new AccessDeniedException("Access denied: You are not assigned to an EVC inspection for this application.");
                 }
             }
         }

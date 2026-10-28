@@ -32,6 +32,8 @@
    - 5.8 Register Application (`POST /api/v1/applications`)
    - 5.9 Get Application Details (`GET /api/v1/applications/{id}`)
    - 5.10 Execute Workflow Action (`POST /api/v1/applications/{id}/actions`)
+   - 5.11 EVC Member Operations (`/api/v1/evc/member/**`)
+   - 5.12 Admin EVC Member Management (`/api/v1/admin/evc-members/**`)
 6. [Workflow State Machine Action Payloads](#6-workflow-state-machine-action-payloads)
 7. [Automated Test Evidence Matrix](#7-automated-test-evidence-matrix)
 
@@ -328,6 +330,27 @@ curl -s http://localhost:8080/api/v1/applications/APP-2026-1042   -H "Authorizat
 curl -s -X POST http://localhost:8080/api/v1/applications/APP-2026-1042/actions   -H "Authorization: Bearer $TOKEN"   -H "Content-Type: application/json"   -d '{"actionType":"RETURN_FOR_CORRECTION","actorName":"B. Singh","actorRole":"Scrutiny Officer","reason":"Fire safety NOC expired.","newDeficiencies":["Fire safety NOC expired"]}'
 ```
 
+### 5.11 EVC Member Operations
+Base Path: `/api/v1/evc/member`  
+Authorized Roles: `EVC_MEMBER` (member-scoped), `ADMINISTRATOR` (read-only diagnostics), `EVC_COORDINATOR` (read-only diagnostics).
+
+- **`GET /api/v1/evc/member/profile`**: Retrieve authenticated member's academic and verification profile.
+- **`PUT /api/v1/evc/member/profile`**: Update self-service contact and availability info (`phone`, `availabilityStatus`, `preferredRegions`).
+- **`GET /api/v1/evc/member/dashboard`**: Return aggregated metrics (assigned, upcoming, completed, reports pending), profile summary, next visit, and inspections.
+- **`GET /api/v1/evc/member/inspections`**: Return all inspections assigned to the authenticated member.
+- **`GET /api/v1/evc/member/inspections/{id}/documents`**: Return scrutiny and deficiency documents for an assigned visit. Returns `403 Forbidden` if user is not assigned.
+
+### 5.12 Admin EVC Member Management
+Base Path: `/api/v1/admin/evc-members`  
+Authorized Roles: `ADMINISTRATOR` only (`403 Forbidden` for other roles).
+
+- **`GET /api/v1/admin/evc-members`**: Paginated and filtered list of EVC member profiles.
+- **`POST /api/v1/admin/evc-members`**: Provision a new EVC member account and domain profile.
+- **`GET /api/v1/admin/evc-members/{id}`**: Detailed profile including inspection assignment history.
+- **`PUT /api/v1/admin/evc-members/{id}`**: Update member verification status, organization, max visits, etc.
+- **`POST /api/v1/admin/evc-members/assignments`**: Assign an EVC member to a committee visit.
+- **`DELETE /api/v1/admin/evc-members/assignments/{visitId}/{memberId}`**: Remove member from a committee visit.
+
 ---
 
 ## 6. Workflow State Machine Action Payloads
@@ -394,6 +417,20 @@ curl -s -X POST http://localhost:8080/api/v1/applications/APP-2026-1042/actions 
 | `InstitutionAndApplicationApiIntegrationTest.shouldCreateAndRetrieveApplicationLinkedToInstitution` | `POST /api/v1/applications` | Application registration linked to FK institution | **PASSED** |
 | `InstitutionAndApplicationApiIntegrationTest.shouldRejectDuplicateApplicationReference` | `POST /api/v1/applications` | 409 Conflict rejection on duplicate reference | **PASSED** |
 | `InstitutionAndApplicationApiIntegrationTest.shouldPaginateAndFilterApplications` | `GET /api/v1/applications` | Multivariable pagination and filtering | **PASSED** |
+| `EvcMemberSecurityAndOperationsIntegrationTest.shouldIssueTokenForEvcMemberAndDenyAdminPortalAccess` | `POST /api/v1/auth/token` & `POST /api/v1/auth/admin/token` | User token issued; Admin portal token rejected (403) | **PASSED** |
+| `EvcMemberSecurityAndOperationsIntegrationTest.shouldRetrieveEvcMemberProfileSuccessfully` | `GET /api/v1/evc/member/profile` | Authenticated member retrieves own profile | **PASSED** |
+| `EvcMemberSecurityAndOperationsIntegrationTest.shouldAllowEvcMemberToUpdateOwnProfileContactAndAvailability` | `PUT /api/v1/evc/member/profile` | Self-service update of phone and availability | **PASSED** |
+| `EvcMemberSecurityAndOperationsIntegrationTest.shouldRetrieveEvcMemberDashboardData` | `GET /api/v1/evc/member/dashboard` | Dashboard metrics, next visit, and assigned inspections | **PASSED** |
+| `EvcMemberSecurityAndOperationsIntegrationTest.shouldDenyEvcMemberFromPerformingCoordinatorScheduling` | `POST /api/v1/evc/visits/{id}/schedule` | Strict 403 Forbidden on coordinator operation | **PASSED** |
+| `EvcMemberSecurityAndOperationsIntegrationTest.shouldDenyEvcMemberFromPerformingCoordinatorVisitCompletion` | `POST /api/v1/evc/visits/{id}/complete` | Strict 403 Forbidden on coordinator operation | **PASSED** |
+| `EvcMemberSecurityAndOperationsIntegrationTest.shouldDenyEvcMemberFromPerformingCoordinatorReportSubmission` | `POST /api/v1/evc/visits/{id}/report` | Strict 403 Forbidden on coordinator operation | **PASSED** |
+| `EvcMemberSecurityAndOperationsIntegrationTest.shouldAllowEvcMemberToAccessDocumentsForAssignedVisit` | `GET /api/v1/evc/member/inspections/{id}/documents` | Member accesses scrutiny docs for assigned visit | **PASSED** |
+| `EvcMemberSecurityAndOperationsIntegrationTest.shouldDenyEvcMemberFromAccessingDocumentsForUnassignedVisit` | `GET /api/v1/evc/member/inspections/{id}/documents` | 403 Forbidden when accessing unassigned visit documents | **PASSED** |
+| `EvcMemberSecurityAndOperationsIntegrationTest.shouldAllowAdministratorToManageEvcMembers` | `/api/v1/admin/evc-members/**` | Admin lists, creates, and updates member profiles | **PASSED** |
+| `EvcMemberSecurityAndOperationsIntegrationTest.shouldDenyEvcMemberFromAccessingAdminEvcMemberManagement` | `GET /api/v1/admin/evc-members` | 403 Forbidden for EVC Member on admin endpoints | **PASSED** |
+| `EvcMemberSecurityAndOperationsIntegrationTest.shouldDenyCoordinatorFromAccessingAdminEvcMemberManagement` | `GET /api/v1/admin/evc-members` | 403 Forbidden for Coordinator on admin endpoints | **PASSED** |
+| `EvcMemberSecurityAndOperationsIntegrationTest.shouldAllowAdministratorToAssignAndRemoveEvcMemberFromVisit` | `POST & DELETE /api/v1/admin/evc-members/assignments` | Admin assigns and removes member from visit | **PASSED** |
+| `EvcMemberSecurityAndOperationsIntegrationTest.shouldDenyNonAdminFromAssigningEvcMemberToVisit` | `POST /api/v1/admin/evc-members/assignments` | Non-admin denied from committee assignment | **PASSED** |
 
 ---
 *End of SIH 26262 API Documentation.*

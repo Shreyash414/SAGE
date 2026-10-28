@@ -2,7 +2,11 @@
 
 **Official Name**: SAGE  
 **Full Name**: Institutional Approval & Compliance Platform  
-**Architecture**: Spring Boot 3.4.3 REST API + PostgreSQL 18 + Dual React 19 Frontend (User Portal & Dedicated Admin Panel)
+**Architecture**: Spring Boot 3.4.3 REST API + PostgreSQL 18 + Dual React 19 Frontend (User Portal & Dedicated Admin Panel)  
+**Official Repository**: [https://github.com/Shreyash414/SAGE](https://github.com/Shreyash414/SAGE)
+
+> 📖 **Master Project, Tech Stack & Workflow Report**:  
+> For the complete analysis of tech stack evolution (used, changed, currently used), development and approval workflows (initial, changed, current), and all 8 project checkpoints, refer to **[`SAGE_MASTER_PROJECT_REPORT.md`](SAGE_MASTER_PROJECT_REPORT.md)**.
 
 ---
 
@@ -11,10 +15,10 @@
 **SAGE — Institutional Approval & Compliance Platform** is an enterprise-grade governance system designed to orchestrate technical institution approval lifecycles, deficiency rectifications, statutory compliance monitoring, Expert Visit Committee (EVC) operations, and administrative access control.
 
 The platform enforces the architectural mandate that **the backend owns business logic, state machines, regulatory validation, and authorization**:
-- **User Portal (Port 5173)**: Serves institutional applicants, scrutiny officers, regional officers, compliance reviewers, and committee coordinators.
+- **User Portal (Port 5173)**: Serves institutional applicants, scrutiny officers, regional officers, compliance reviewers, committee coordinators, and EVC members.
 - **SAGE Admin Panel (Port 5174)**: Dedicated administrative entry point with `strictPort: true` providing authorized administrators (`ROLE_ADMIN` / `ROLE_ADMINISTRATOR`) with full user-management directory, status lifecycle controls, and immutable audit log exploration.
 - **Spring Boot REST API (Port 8080)**: Central application server with stateless Bearer authentication, method security, BCrypt credential verification, and OpenAPI documentation.
-- **PostgreSQL Database (Port 5432)**: Relational persistent store managed via Flyway migrations (V1 through V4).
+- **PostgreSQL Database (Port 5432)**: Relational persistent store managed via Flyway migrations (V1 through V10).
 
 > **Important Security Clarification**:  
 > A different port provides architectural and network separation, **not** a security boundary. All privileged administrative operations are strictly protected by backend authentication and persisted role authorization (`ROLE_ADMIN` / `ROLE_ADMINISTRATOR`). Non-admin users are rejected with `403 Forbidden` at the API layer.
@@ -42,9 +46,10 @@ All services use designated default ports configured explicitly without silent f
 | **Framework** | Spring Boot | `3.4.3` | Application framework (Web, Data JPA, Security) |
 | **Build Tool** | Apache Maven | `3.10.0` | Build automation via Maven Wrapper (`./mvnw`) |
 | **Database** | PostgreSQL | `18.6` | Relational persistent store (`aicte_platform_db`) |
-| **Migrations** | Flyway | `10.20.1` | Automated schema migrations (`V1` to `V4`) |
+| **Migrations** | Flyway | `10.20.1` | Automated schema migrations (`V1` to `V10`) |
 | **ORM / JPA** | Hibernate | `6.6.8.Final` | Persistence provider with entity validation |
 | **Security** | Spring Security | `6.4.3` | Bearer token auth, `@EnableMethodSecurity`, BCrypt hashing |
+| **PDF Extraction** | Apache PDFBox | `3.0.3` | Digital document text parsing & page analysis |
 | **API Docs** | springdoc-openapi | `2.8.5` | OpenAPI 3.0 specification & Swagger UI |
 | **User Frontend** | React 19 + Vite | React `19.3.1`, Vite `8.3.5` | User-facing portal (located in `frontend/`, port 5173) |
 | **Admin Panel** | React 19 + Vite | React `19.3.1`, Vite `8.3.5` | Dedicated Admin Console (located in `admin/`, port 5174) |
@@ -61,21 +66,22 @@ SIH2/
 │   ├── package.json                   # Dependencies, build, preview scripts
 │   └── vite.config.js                 # Port 5174 configuration with strictPort: true
 ├── frontend/                          # User-facing SAGE Portal (Port 5173)
-│   ├── src/                           # Workspaces, application dossiers, EVC operations
-│   ├── tests/                         # EVC lifecycle automated tests
+│   ├── src/                           # Workspaces, application dossiers, EVC & Scrutiny
+│   ├── tests/                         # EVC lifecycle, draft promotion sync & EVC member tests
 │   ├── package.json                   # Dependencies and build scripts
 │   └── vite.config.js                 # Port 5173 configuration
 ├── src/                               # Spring Boot 3.4.3 backend
 │   ├── main/java/in/gov/aicte/platform/
-│   │   ├── admin/                     # AdminController, AdminService, DTOs
+│   │   ├── admin/                     # AdminController, AdminService, EVC member admin DTOs
 │   │   ├── audit/                     # AuditEvent JPA entity and repository
 │   │   ├── auth/                      # DevBearerAuthenticationFilter, DevTokenService
 │   │   ├── config/                    # SecurityConfig (roles, CORS, BCrypt)
 │   │   ├── user/                      # User JPA entity and UserRepository
-│   │   ├── application/               # Application dossiers & approval entities
+│   │   ├── application/               # Application dossiers, drafts, & submission
 │   │   ├── workflow/                  # Workflow state machine & transition history
-│   │   └── evc/                       # Expert Visit Committee scheduling
-│   └── main/resources/db/migration/   # Flyway migrations V1, V2, V3, and V4
+│   │   ├── scrutiny/                  # Automated Scrutiny, PDFBox extraction, rules & re-scrutiny
+│   │   └── evc/                       # EVC visits, member profiles, & assignments
+│   └── main/resources/db/migration/   # Flyway migrations V1 through V10
 ├── compose.yaml                       # Docker Compose PostgreSQL service
 └── run.sh                             # Master service runner (DB -> API -> User -> Admin)
 ```
@@ -146,33 +152,59 @@ All administrative endpoints reside under `/api/v1/admin/**` and require `ROLE_A
 - **`V2__workflow_and_application_extensions.sql`**: Workflow engine attributes and workflow_transitions table.
 - **`V3__evc_operations.sql`**: Expert Visit Committee (EVC) operations schema and inspection backfills.
 - **`V4__admin_and_user_management.sql`**: Persistent `users` directory, unique constraints, status tracking (`ACTIVE`, `SUSPENDED`, `DEACTIVATED`), audit event extensions (`outcome`, `request_id`), and canonical identity seed.
+- **`V5__application_submission_workflow.sql`**: Submission workflow, deficiency tracking, and institutional document registry.
+- **`V6__application_drafts_and_safe_promotion.sql`**: Application drafts table, draft locks, and atomic promotion mechanism.
+- **`V7__automated_scrutiny_and_rescrutiny.sql`**: Automated scrutiny assessment engine, document extraction entities, rule findings, deficiency tracking, and re-scrutiny diff comparisons.
+- **`V8__seed_synthetic_scrutiny_demo_data.sql`**: Synthetic scrutiny demonstration dossiers, test documents, and deficiency notices.
+- **`V9__ocr_confidence_and_metadata.sql`**: OCR confidence realism, character counts, page counts, and extraction metadata.
+- **`V10__evc_member_role_and_management.sql`**: EVC member profiles (`evc_member_profiles`), committee assignments (`evc_member_assignments`), indexes, and seeded canonical EVC Member (`USR-EVCM-01` / `MEM-EVCM-01`).
 
 ---
 
 ## 8. Verification & Test Execution
 
-### 8.1 Backend Automated Tests (100% Passing)
+### 8.1 Backend Automated Tests (134 Tests, 100% Passing)
 Execute backend test suites:
 ```bash
+# Run complete test suite (134 tests across all 13 test suites)
+./mvnw test
+
+# Targeted execution of newly integrated and core operational suites:
+# Run EVC Member security, role scoping, and admin management tests
+./mvnw test -Dtest=EvcMemberSecurityAndOperationsIntegrationTest
+
+# Run Automated Scrutiny rule validation & re-scrutiny unit tests
+./mvnw test -Dtest=ScrutinyAutomationAndRescrutinyUnitTest
+
+# Run Automated Scrutiny workflow integration tests
+./mvnw test -Dtest=AutomatedScrutinyWorkflowIntegrationTest
+
 # Run Admin security and authorization tests
 ./mvnw test -Dtest=AdminSecurityAndManagementIntegrationTest
 
 # Run AdminService business logic and invariant tests
 ./mvnw test -Dtest=AdminServiceUnitTest
 
+# Run Dual-portal authentication separation tests
+./mvnw test -Dtest=PortalAuthenticationSeparationIntegrationTest
+
+# Run Application draft security and promotion tests
+./mvnw test -Dtest=ApplicationDraftSecurityAndPromotionIntegrationTest
+
 # Run Public health endpoint tests
 ./mvnw test -Dtest=HealthEndpointTest
 ```
 
-### 8.2 Frontend Builds & Verification
+### 8.2 Frontend Builds & Verification (17 Tests, 100% Passing)
 ```bash
 # Verify SAGE Admin Panel (Port 5174)
 cd admin
 npm run build
 
-# Verify SAGE User Portal (Port 5173)
+# Verify SAGE User Portal (Port 5173) - Runs EVC lifecycle, draft promotion sync, and EVC Member tests (17 tests)
 cd ../frontend
 npm test
+npm run lint
 npm run build
 ```
 

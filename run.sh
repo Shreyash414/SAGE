@@ -240,7 +240,7 @@ if [ ! -d "node_modules" ]; then
 fi
 
 # Start frontend development server in background
-npm run dev -- --host 0.0.0.0 --port "${FRONTEND_PORT}" &
+npm run dev -- --host 0.0.0.0 --port "${FRONTEND_PORT}" --force &
 FRONTEND_PID=$!
 cd "$PROJECT_ROOT"
 
@@ -286,7 +286,7 @@ if [ ! -d "node_modules" ]; then
 fi
 
 # Start admin development server explicitly on ADMIN_PORT with strictPort
-npm run dev -- --host 0.0.0.0 --port "${ADMIN_PORT}" --strictPort &
+npm run dev -- --host 0.0.0.0 --port "${ADMIN_PORT}" --strictPort --force &
 ADMIN_PID=$!
 cd "$PROJECT_ROOT"
 

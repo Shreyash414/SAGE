@@ -95,6 +95,10 @@ node_modules
 node_modules/
 **/node_modules
 **/node_modules/
+.vite
+.vite/
+**/.vite
+**/.vite/
 dist
 dist/
 **/dist

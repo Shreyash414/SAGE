@@ -68,6 +68,13 @@
 			<version>8.5.17</version>
 		</dependency>
 
+		<!-- Apache PDFBox for Digital Text Extraction from Searchable PDFs -->
+		<dependency>
+			<groupId>org.apache.pdfbox</groupId>
+			<artifactId>pdfbox</artifactId>
+			<version>3.0.4</version>
+		</dependency>
+
 		<!-- API Documentation (OpenAPI / Swagger UI) -->
 		<dependency>
 			<groupId>org.springdoc</groupId>
@@ -93,6 +100,14 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<version>3.2.5</version>
+				<configuration>
+					<argLine>-XX:+EnableDynamicAgentLoading</argLine>
+				</configuration>
 			</plugin>
 		</plugins>
 	</build>

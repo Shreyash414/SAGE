@@ -11,7 +11,7 @@ import { ScrutinyOfficerDashboard } from './ScrutinyOfficerDashboard';
 import { EVCCoordinatorDashboard } from './EVCCoordinatorDashboard';
 import { ComplianceReviewerDashboard } from './ComplianceReviewerDashboard';
 import { SeniorManagementDashboard } from './SeniorManagementDashboard';
-import { AdministratorDashboard } from './AdministratorDashboard';
+import { EVCMemberDashboard } from './EVCMemberDashboard';
 
 export const DashboardPage = () => {
   const { role, logout } = useAuth();
@@ -44,6 +44,9 @@ export const DashboardPage = () => {
 
     case ROLES.EVC_COORDINATOR:
       return <EVCCoordinatorDashboard />;
+
+    case ROLES.EVC_MEMBER:
+      return <EVCMemberDashboard />;
 
     case ROLES.COMPLIANCE_REVIEWER:
       return <ComplianceReviewerDashboard />;
