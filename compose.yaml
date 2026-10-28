@@ -18,7 +18,7 @@ services:
       - postgres_data:/var/lib/postgresql
 
   minio:
-    image: minio/minio:latest
+    image: cgr.dev/chainguard/minio:latest
     container_name: aicte-minio
     restart: unless-stopped
     environment:
@@ -36,3 +36,4 @@ volumes:
     driver: local
   minio_data:
     driver: local
+

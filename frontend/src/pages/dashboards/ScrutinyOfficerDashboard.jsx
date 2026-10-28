@@ -84,6 +84,28 @@ export const ScrutinyOfficerDashboard = () => {
       ),
     },
     {
+      header: 'Automated Scrutiny',
+      key: 'automatedScrutiny',
+      render: (row) => {
+        const hasDefs = row.deficiencies && row.deficiencies.length > 0;
+        return (
+          <span
+            style={{
+              fontSize: '11px',
+              fontWeight: '700',
+              padding: '2px 8px',
+              borderRadius: '4px',
+              background: hasDefs ? '#FEF2F2' : '#F0F9FF',
+              color: hasDefs ? '#DC2626' : '#0284C7',
+              border: `1px solid ${hasDefs ? '#FECACA' : '#BAE6FD'}`,
+            }}
+          >
+            {hasDefs ? `${row.deficiencies.length} Deficiencies` : 'OCR & Rules Ready'}
+          </span>
+        );
+      },
+    },
+    {
       header: 'Due Date',
       key: 'dueDate',
     },
