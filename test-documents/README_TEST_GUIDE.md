@@ -41,8 +41,8 @@ As an authorized Scrutiny Officer, review a well-supported negative finding, rec
 4. Upload `14_Fire_Safety_v2_CORRECTED.pdf` as a **new version of the SAME document category** and re-run scrutiny.
 5. Confirm old version preserved, new assessment cycle generated, and a diff showing changed validity date and findings. **Do not auto-certify authenticity or auto-close a confirmed deficiency without authorized review.**
 
-### F - Actual OCR check
-Upload `15_Fire_Safety_SCANNED_IMAGE_ONLY.pdf`. Its pages contain raster images only (no selectable text). PDFBox alone cannot extract its contents. Tess4J/Tesseract should extract text or record an honest OCR failure; inspect actual OCR output and per-page provenance.
+### F - Scanned PDF and Retired OCR Manual Review Fallback
+Upload `15_Fire_Safety_SCANNED_IMAGE_ONLY.pdf`. Its pages contain raster images only (no selectable text). With the retirement of the legacy Tess4J OCR engine, SAGE safely flags this document with an honest `UNAVAILABLE` (`OCR_RETIRED_UNAVAILABLE`) status and routes it for manual Scrutiny Officer verification without fabricating artificial text or confidence scores.
 
 ### G - Empty / insufficient content
 Upload `16_Completely_Blank_Page.pdf` and `11_Blank_Unreadable_Content.pdf` separately. A readable PDF with inadequate evidence or a completely blank page must not content-PASS.

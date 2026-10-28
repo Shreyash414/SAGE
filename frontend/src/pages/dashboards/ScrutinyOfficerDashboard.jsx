@@ -100,7 +100,7 @@ export const ScrutinyOfficerDashboard = () => {
               border: `1px solid ${hasDefs ? '#FECACA' : '#BAE6FD'}`,
             }}
           >
-            {hasDefs ? `${row.deficiencies.length} Deficiencies` : 'OCR & Rules Ready'}
+            {hasDefs ? `${row.deficiencies.length} Deficiencies` : 'Digital Text & Rules Ready'}
           </span>
         );
       },

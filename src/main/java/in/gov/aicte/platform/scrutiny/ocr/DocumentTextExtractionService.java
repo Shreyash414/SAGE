@@ -1,33 +1,40 @@
 package in.gov.aicte.platform.scrutiny.ocr;
 
 import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.rendering.PDFRenderer;
+import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
-
+/**
+ * Service for extracting text and metadata from uploaded scrutiny documents.
+ *
+ * Employs Apache PDFBox for high-fidelity extraction of embedded digital text streams.
+ * The legacy Tess4J / Tesseract OCR engine has been retired and removed.
+ * Scanned PDFs or raster images lacking extractable digital text return an explicit
+ * UNAVAILABLE status without fabricating artificial OCR text or confidence scores,
+ * ensuring strict regulatory safety and manual officer verification.
+ */
 @Service
 public class DocumentTextExtractionService {
 
     private static final Logger log = LoggerFactory.getLogger(DocumentTextExtractionService.class);
 
-    private static final int MAX_PAGES_TO_SCAN = 5;
     private static final int SEARCHABLE_TEXT_THRESHOLD_CHARS = 40;
 
-    private final TesseractOcrService tesseractOcrService;
-
-    public DocumentTextExtractionService(TesseractOcrService tesseractOcrService) {
-        this.tesseractOcrService = tesseractOcrService;
+    public DocumentTextExtractionService() {
     }
 
+    /**
+     * Indicates whether an automated optical character recognition engine is active.
+     * With the retirement of Tesseract/Tess4J, this explicitly returns false until
+     * a next-generation neural/vision model is integrated.
+     */
     public boolean isOcrAvailable() {
-        return tesseractOcrService != null && tesseractOcrService.isAvailable();
+        return false;
     }
 
     public ExtractedDocumentData extractText(byte[] documentBytes, String fileName, String contentType) {
@@ -56,140 +63,80 @@ public class DocumentTextExtractionService {
                 return ExtractedDocumentData.empty("PDF document contains 0 pages.");
             }
 
-            // 1. Try Apache PDFBox text extraction (Searchable PDF with embedded character stream)
+            // Apache PDFBox text extraction (Searchable PDF with embedded character stream)
             PDFTextStripper stripper = new PDFTextStripper();
             stripper.setSortByPosition(true);
             String searchableText = stripper.getText(document);
             String trimmedText = (searchableText != null) ? searchableText.trim() : "";
 
             if (trimmedText.length() >= SEARCHABLE_TEXT_THRESHOLD_CHARS) {
-                log.info("Extracted searchable text from PDF via Apache PDFBox (chars: {}, pages: {})", trimmedText.length(), totalPages);
+                log.info("Extracted searchable digital text from PDF via Apache PDFBox (chars: {}, pages: {})", trimmedText.length(), totalPages);
                 // For native digital text, optical character recognition is not performed.
                 // Never fabricate an artificial OCR confidence score for embedded digital text!
                 return ExtractedDocumentData.embeddedText(trimmedText, totalPages);
             }
 
-            // 2. Scanned PDF fallback -> Render pages to images and execute Tesseract OCR
-            log.info("PDF has minimal searchable text (scanned PDF or blank detected). Attempting page rendering for OCR: {}", fileName);
+            // Check if pages contain raster images (scanned PDF)
+            boolean hasRasterImages = containsImages(document);
 
-            if (!tesseractOcrService.isAvailable()) {
-                if (trimmedText.isEmpty()) {
-                    ExtractedDocumentData data = ExtractedDocumentData.unavailable(
-                            "Scanned or non-searchable PDF detected. Native Tesseract OCR engine is not configured on the host system. Document flagged for Scrutiny Officer manual review."
-                    );
-                    data.setPageCount(totalPages);
-                    return data;
-                } else {
-                    // Minimal text found (< 40 chars)
-                    ExtractedDocumentData data = new ExtractedDocumentData(
-                            trimmedText,
-                            "PDFBOX_SEARCHABLE_TEXT",
-                            null,
-                            "UNCERTAIN",
-                            trimmedText.length(),
-                            totalPages,
-                            "INSUFFICIENT_SEARCHABLE_TEXT"
-                    );
-                    data.setErrorMessage("Document has fewer than " + SEARCHABLE_TEXT_THRESHOLD_CHARS + " characters of searchable text and OCR is unavailable.");
-                    return data;
-                }
-            }
-
-            PDFRenderer renderer = new PDFRenderer(document);
-            StringBuilder ocrTextAccumulator = new StringBuilder();
-            int pagesToProcess = Math.min(totalPages, MAX_PAGES_TO_SCAN);
-            double totalWordConfidenceSum = 0.0;
-            int totalWordsCount = 0;
-
-            for (int pageIndex = 0; pageIndex < pagesToProcess; pageIndex++) {
-                try {
-                    // Render page at 200 DPI for optimal OCR balance between accuracy and RAM
-                    BufferedImage pageImage = renderer.renderImageWithDPI(pageIndex, 200);
-                    OcrPageResult pageResult = tesseractOcrService.extractTextWithConfidence(pageImage);
-                    if (pageResult.text() != null && !pageResult.text().isBlank()) {
-                        ocrTextAccumulator.append(pageResult.text()).append("\n--- PAGE ").append(pageIndex + 1).append(" ---\n");
-                    }
-                    if (pageResult.confidence() != null && pageResult.wordCount() > 0) {
-                        totalWordConfidenceSum += (pageResult.confidence() * 100.0) * pageResult.wordCount();
-                        totalWordsCount += pageResult.wordCount();
-                    }
-                } catch (Exception e) {
-                    log.warn("OCR failed on page {} of {}: {}", pageIndex + 1, fileName, e.getMessage());
-                }
-            }
-
-            String finalOcrText = ocrTextAccumulator.toString().trim();
-            if (!finalOcrText.isBlank()) {
-                Double aggregateConfidence = null;
-                if (totalWordsCount > 0) {
-                    double meanPercent = totalWordConfidenceSum / totalWordsCount;
-                    aggregateConfidence = Math.round((meanPercent / 100.0) * 10000.0) / 10000.0;
-                }
-                return ExtractedDocumentData.ocr(
-                        finalOcrText,
-                        aggregateConfidence,
-                        totalPages,
-                        finalOcrText.length(),
-                        "TESSERACT_OCR_SCANNED"
+            if (hasRasterImages) {
+                log.info("PDF has minimal or no searchable digital text, but contains raster images (scanned PDF). Flagging for manual review: {}", fileName);
+                ExtractedDocumentData data = ExtractedDocumentData.unavailable(
+                        "Scanned or non-searchable PDF detected (" + trimmedText.length() + " digital chars found). "
+                                + "Legacy OCR engine is retired. Document flagged for Scrutiny Officer manual review."
                 );
-            } else {
-                if (trimmedText.isEmpty()) {
-                    ExtractedDocumentData data = ExtractedDocumentData.empty(
-                            "Scanned PDF page rendering and OCR produced no recognized characters (blank or unreadable document)."
-                    );
-                    data.setExtractionMethod("TESSERACT_OCR_SCANNED");
-                    data.setPageCount(totalPages);
-                    return data;
-                } else {
-                    ExtractedDocumentData data = new ExtractedDocumentData(
-                            trimmedText,
-                            "PDFBOX_SEARCHABLE_TEXT",
-                            null,
-                            "UNCERTAIN",
-                            trimmedText.length(),
-                            totalPages,
-                            "INSUFFICIENT_SEARCHABLE_TEXT"
-                    );
-                    data.setErrorMessage("Document contains only minimal text (" + trimmedText.length() + " chars) and OCR detected no additional characters.");
-                    return data;
-                }
+                data.setPageCount(totalPages);
+                return data;
             }
+
+            if (trimmedText.isEmpty()) {
+                log.info("PDF document contains no digital text and no raster images (blank document): {}", fileName);
+                ExtractedDocumentData data = ExtractedDocumentData.empty("PDF document contains no text or visual content (blank document).");
+                data.setPageCount(totalPages);
+                return data;
+            }
+
+            // Minimal text found (< 40 chars) and no images
+            log.info("PDF document contains only minimal digital text ({} chars) and no images: {}", trimmedText.length(), fileName);
+            ExtractedDocumentData data = new ExtractedDocumentData(
+                    trimmedText,
+                    "PDFBOX_SEARCHABLE_TEXT",
+                    null,
+                    "UNCERTAIN",
+                    trimmedText.length(),
+                    totalPages,
+                    "INSUFFICIENT_SEARCHABLE_TEXT"
+            );
+            data.setErrorMessage("Document has fewer than " + SEARCHABLE_TEXT_THRESHOLD_CHARS + " characters of searchable text and no scanned images.");
+            return data;
+
         } catch (Exception e) {
             log.error("Failed to parse PDF document {}: {}", fileName, e.getMessage());
             return ExtractedDocumentData.failed("Corrupted or unreadable PDF document: " + e.getMessage());
         }
     }
 
-    private ExtractedDocumentData extractFromImage(byte[] imageBytes, String fileName) {
-        if (!tesseractOcrService.isAvailable()) {
-            return ExtractedDocumentData.unavailable(
-                    "Image document uploaded. Tesseract OCR is not available on host. Document flagged for manual review."
-            );
-        }
-
-        try (ByteArrayInputStream bais = new ByteArrayInputStream(imageBytes)) {
-            BufferedImage image = ImageIO.read(bais);
-            if (image == null) {
-                return ExtractedDocumentData.failed("Unable to decode image stream for " + fileName);
-            }
-            OcrPageResult pageResult = tesseractOcrService.extractTextWithConfidence(image);
-            String ocrText = pageResult.text();
-            if (ocrText != null && !ocrText.isBlank()) {
-                return ExtractedDocumentData.ocr(
-                        ocrText.trim(),
-                        pageResult.confidence(),
-                        1,
-                        ocrText.trim().length(),
-                        "TESSERACT_OCR_IMAGE"
-                );
-            } else {
-                ExtractedDocumentData data = ExtractedDocumentData.empty("Tesseract produced empty output for image: " + fileName);
-                data.setExtractionMethod("TESSERACT_OCR_IMAGE");
-                return data;
+    private boolean containsImages(PDDocument document) {
+        try {
+            for (PDPage page : document.getPages()) {
+                if (page.getResources() != null) {
+                    for (COSName name : page.getResources().getXObjectNames()) {
+                        if (page.getResources().isImageXObject(name)) {
+                            return true;
+                        }
+                    }
+                }
             }
         } catch (Exception e) {
-            log.error("Image OCR failed for {}: {}", fileName, e.getMessage());
-            return ExtractedDocumentData.failed("Image processing error: " + e.getMessage());
+            log.debug("Error checking PDF page resources for images: {}", e.getMessage());
         }
+        return false;
+    }
+
+    private ExtractedDocumentData extractFromImage(byte[] imageBytes, String fileName) {
+        log.info("Raster image uploaded ({}). Legacy OCR engine is retired; flagging for manual review.", fileName);
+        return ExtractedDocumentData.unavailable(
+                "Image document uploaded (" + fileName + "). Legacy OCR engine is retired. Document flagged for Scrutiny Officer manual review."
+        );
     }
 }

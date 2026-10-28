@@ -1,0 +1,98 @@
+================================================================================
+SAGE — Institutional Approval & Compliance Platform
+System & Environment Prerequisites / Requirements
+================================================================================
+
+1. SYSTEM & RUNTIME PREREQUISITES
+--------------------------------------------------------------------------------
+- Java:               JDK 21 or higher (OpenJDK 21, Eclipse Temurin 21, etc.)
+                      Verify with: java -version
+- Node.js:            Node.js v20.x or higher (v20.19+ / v22.x LTS recommended)
+                      Verify with: node -v
+- Package Manager:    npm v10.x or higher
+                      Verify with: npm -v
+- Container Runtime:  Docker Engine 24.0+ & Docker Compose v2.20+
+                      Verify with: docker --version && docker compose version
+- Build Tool:         Maven 3.9+ (or use the pre-packaged ./mvnw wrapper)
+                      Verify with: ./mvnw -version
+- Shell:              Bash 4.0+ / Zsh (Linux / macOS / Windows WSL2)
+                      Verify with: bash --version
+
+--------------------------------------------------------------------------------
+2. REQUIRED PORTS (Ensure ports are free on localhost)
+--------------------------------------------------------------------------------
+- Port 8080 : Spring Boot REST API Server
+- Port 5173 : SAGE User Portal (React + Vite)
+- Port 5174 : SAGE Admin Panel (React + Vite)
+- Port 5432 : PostgreSQL 18 Database (Docker container: aicte-postgres)
+- Port 9000 : MinIO Object Storage S3 API (Docker container: aicte-minio)
+- Port 9001 : MinIO Web Admin Console (Docker container: aicte-minio)
+
+--------------------------------------------------------------------------------
+3. ENVIRONMENT CONFIGURATION
+--------------------------------------------------------------------------------
+Before running, copy the example environment file:
+
+  cp .env.example .env
+
+Default environment values in .env:
+  SERVER_PORT=8080
+  DB_HOST=localhost
+  DB_PORT=5432
+  DB_NAME=aicte_platform_db
+  DB_USER=aicte_app_user
+  DB_PASSWORD=aicte_123
+  MINIO_ENDPOINT=http://127.0.0.1:9000
+  MINIO_ACCESS_KEY=sage_minio_admin
+  MINIO_SECRET_KEY=sage_minio_secret_2026
+  MINIO_BUCKET_NAME=aicte-documents
+
+--------------------------------------------------------------------------------
+4. QUICK LAUNCH (ONE-COMMAND BOOTSTRAP)
+--------------------------------------------------------------------------------
+The project includes a master orchestration script (run.sh):
+
+  chmod +x run.sh
+  ./run.sh
+
+This script automatically:
+  1. Validates all port availability.
+  2. Starts PostgreSQL 18 and MinIO via Docker Compose.
+  3. Executes Flyway database migrations (V1 to V6).
+  4. Launches the Spring Boot backend on http://localhost:8080.
+  5. Installs dependencies and starts User Frontend on http://localhost:5173.
+  6. Installs dependencies and starts Admin Panel on http://localhost:5174.
+
+--------------------------------------------------------------------------------
+5. MANUAL / STEP-BY-STEP STARTUP
+--------------------------------------------------------------------------------
+If you prefer running services independently:
+
+Step 1: Start Database & Object Storage
+  docker compose up -d
+
+Step 2: Start Backend REST API
+  ./mvnw spring-boot:run
+  (API is accessible at http://localhost:8080, Swagger docs at http://localhost:8080/swagger-ui.html)
+
+Step 3: Start User Portal
+  cd frontend
+  npm install
+  npm run dev
+  (Access portal at http://localhost:5173)
+
+Step 4: Start Admin Panel (in a separate terminal)
+  cd admin
+  npm install
+  npm run dev
+  (Access admin panel at http://localhost:5174)
+
+--------------------------------------------------------------------------------
+6. TEST ACCOUNTS (Seeded Out-of-the-Box)
+--------------------------------------------------------------------------------
+- Administrator:      admin@aicte.gov.in       / Admin@123456
+- Scrutiny Officer:   scrutiny@aicte.gov.in    / Scrutiny@123456
+- Regional Officer:   regional@aicte.gov.in    / Regional@123456
+- EVC Expert:         evc@aicte.gov.in         / Evc@123456
+- Institution User:   principal@tech.edu       / College@123456
+================================================================================

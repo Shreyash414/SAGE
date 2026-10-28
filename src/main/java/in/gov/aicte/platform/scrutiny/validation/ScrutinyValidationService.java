@@ -210,12 +210,12 @@ public class ScrutinyValidationService {
                 }
 
                 // Record Technical Format & Container Verification (explicitly separate from statutory compliance)
-                boolean isOcrExt = ext != null && ext.getExtractionMethod() != null && ext.getExtractionMethod().startsWith("TESSERACT");
+                boolean isOcrExt = ext != null && ext.getExtractionMethod() != null && (ext.getExtractionMethod().contains("OCR") || ext.getExtractionMethod().startsWith("TESSERACT"));
                 String formatActualValue = isOcrExt
-                        ? "FORMAT_VALID_SCANNED_OCR (" + ext.getExtractionMethod() + (ext.getConfidenceScore() != null ? String.format(", %.1f%% confidence", ext.getConfidenceScore() * 100.0) : "") + ")"
+                        ? "FORMAT_VALID_SCANNED (" + ext.getExtractionMethod() + (ext.getConfidenceScore() != null ? String.format(", %.1f%% confidence", ext.getConfidenceScore() * 100.0) : "") + ")"
                         : "FORMAT_VALID (" + doc.getContentType() + ", " + doc.getFileSize() + " bytes)";
                 String formatExplanation = isOcrExt
-                        ? "Scanned document file '" + docName + "' was optically processed via Tess4J OCR engine (" + (ext.getTextCharacterCount() != null ? ext.getTextCharacterCount() : 0) + " characters extracted). Technical readability verified. Note: Optical readability verifies technical character extraction only; official issuing authority seal and statutory legal authenticity must be confirmed independently."
+                        ? "Scanned document file '" + docName + "' was processed (" + (ext.getTextCharacterCount() != null ? ext.getTextCharacterCount() : 0) + " characters extracted). Technical readability verified. Note: Technical character extraction only verifies file structure; official issuing authority seal and statutory legal authenticity must be confirmed independently."
                         : "Document file '" + docName + "' is stored in object repository and text stream is readable. Note: This check validates technical file structure only; substantive statutory compliance is evaluated independently under regulatory rules.";
 
                 findings.add(new ScrutinyFinding(
@@ -508,8 +508,8 @@ public class ScrutinyValidationService {
             ));
         }
 
-        // Statutory Authenticity & Seal Check: Readable OCR text alone does not prove official legal authenticity
-        boolean isOcr = ext.getExtractionMethod() != null && ext.getExtractionMethod().startsWith("TESSERACT");
+        // Statutory Authenticity & Seal Check: Extracted text alone does not prove official legal authenticity
+        boolean isOcr = ext.getExtractionMethod() != null && (ext.getExtractionMethod().contains("OCR") || ext.getExtractionMethod().startsWith("TESSERACT"));
         boolean isUnverifiedFixture = rawText.toLowerCase().contains("unverified")
                 || rawText.toLowerCase().contains("synthetic test document")
                 || rawText.toLowerCase().contains("controlled software test fixture");
@@ -526,13 +526,13 @@ public class ScrutinyValidationService {
                     "CERTIFICATE_VALIDITY",
                     "NEEDS_MANUAL_REVIEW",
                     "WARNING",
-                    "Fire Safety Certificate must possess verified competent authority seal, signature, and official dispatch register entry (readable OCR text does not prove legal authenticity)",
+                    "Fire Safety Certificate must possess verified competent authority seal, signature, and official dispatch register entry (readable text does not prove legal authenticity)",
                     isUnverifiedFixture
                             ? "SCANNED_FIXTURE_UNVERIFIED (Official authority seal & legal authenticity unverified)"
-                            : "SCANNED_OCR_READABLE (Authority seal & signature unverified)",
-                    "Document text was successfully extracted via automated OCR ("
-                            + (ext.getConfidenceScore() != null ? String.format("%.1f%% confidence", ext.getConfidenceScore() * 100.0) : "Tess4J")
-                            + "). However, readable OCR text alone does not substantiate legal authenticity or official government seal compliance under APH Clause 1.6. Scrutiny Officer manual review is required to verify competent authority stamp and signature.",
+                            : "SCANNED_READABLE (Authority seal & signature unverified)",
+                    "Document text was extracted ("
+                            + (ext.getConfidenceScore() != null ? String.format("%.1f%% confidence", ext.getConfidenceScore() * 100.0) : ext.getExtractionMethod())
+                            + "). However, extracted text alone does not substantiate legal authenticity or official government seal compliance under APH Clause 1.6. Scrutiny Officer manual review is required to verify competent authority stamp and signature.",
                     "Officer manual document verification required to confirm genuine authority seal before final statutory clearance.",
                     ext.getDocumentName()
             ));

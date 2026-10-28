@@ -29,11 +29,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -48,6 +51,8 @@ public class EvcService {
     private final InstitutionRepository institutionRepository;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
+    private final EvcMemberProfileRepository evcMemberProfileRepository;
+    private final EvcMemberAssignmentRepository evcMemberAssignmentRepository;
 
     public EvcService(
             EvcVisitRepository evcVisitRepository,
@@ -58,6 +63,21 @@ public class EvcService {
             UserRepository userRepository,
             ObjectMapper objectMapper
     ) {
+        this(evcVisitRepository, applicationRepository, workflowTransitionRepository, auditEventRepository, institutionRepository, userRepository, objectMapper, null, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public EvcService(
+            EvcVisitRepository evcVisitRepository,
+            ApplicationRepository applicationRepository,
+            WorkflowTransitionRepository workflowTransitionRepository,
+            AuditEventRepository auditEventRepository,
+            InstitutionRepository institutionRepository,
+            UserRepository userRepository,
+            ObjectMapper objectMapper,
+            @org.springframework.context.annotation.Lazy EvcMemberProfileRepository evcMemberProfileRepository,
+            @org.springframework.context.annotation.Lazy EvcMemberAssignmentRepository evcMemberAssignmentRepository
+    ) {
         this.evcVisitRepository = evcVisitRepository;
         this.applicationRepository = applicationRepository;
         this.workflowTransitionRepository = workflowTransitionRepository;
@@ -65,6 +85,8 @@ public class EvcService {
         this.institutionRepository = institutionRepository;
         this.userRepository = userRepository;
         this.objectMapper = objectMapper;
+        this.evcMemberProfileRepository = evcMemberProfileRepository;
+        this.evcMemberAssignmentRepository = evcMemberAssignmentRepository;
     }
 
     @Transactional(readOnly = true)
@@ -75,6 +97,8 @@ public class EvcService {
         if (isInstitutionRepresentative(auth)) {
             Institution inst = resolveAuthenticatedInstitution(auth);
             source = evcVisitRepository.findByApplicationInstitutionId(inst.getId());
+        } else if (isEvcMember(auth)) {
+            source = getVisitsAssignedToMember(auth.getName());
         } else {
             source = evcVisitRepository.findAll();
         }
@@ -125,6 +149,10 @@ public class EvcService {
                     && !Objects.equals(visitInst.getInstitutionalIdentifier(), inst.getInstitutionalIdentifier()))) {
                 throw new AccessDeniedException("Access denied: EVC visit belongs to another institution.");
             }
+        } else if (isEvcMember(auth)) {
+            if (!isMemberAssignedToVisit(auth.getName(), visit)) {
+                throw new AccessDeniedException("Access denied: You are not assigned to this EVC inspection visit.");
+            }
         }
 
         return EvcResponse.from(visit);
@@ -137,6 +165,8 @@ public class EvcService {
         if (isInstitutionRepresentative(auth)) {
             Institution inst = resolveAuthenticatedInstitution(auth);
             visits = evcVisitRepository.findByApplicationInstitutionId(inst.getId());
+        } else if (isEvcMember(auth)) {
+            visits = getVisitsAssignedToMember(auth.getName());
         } else {
             visits = evcVisitRepository.findAll();
         }
@@ -176,6 +206,9 @@ public class EvcService {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (isInstitutionRepresentative(auth)) {
             throw new AccessDeniedException("Institution representatives are not authorized to schedule EVC visits.");
+        }
+        if (isEvcMember(auth)) {
+            throw new AccessDeniedException("EVC members are not authorized to schedule EVC visits.");
         }
 
         EvcVisit visit = findVisit(idOrReference);
@@ -229,6 +262,9 @@ public class EvcService {
         if (isInstitutionRepresentative(auth)) {
             throw new AccessDeniedException("Institution representatives are not authorized to complete EVC visits.");
         }
+        if (isEvcMember(auth)) {
+            throw new AccessDeniedException("EVC members are not authorized to complete EVC visits.");
+        }
 
         EvcVisit visit = findVisit(idOrReference);
 
@@ -262,6 +298,9 @@ public class EvcService {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (isInstitutionRepresentative(auth)) {
             throw new AccessDeniedException("Institution representatives are not authorized to submit EVC inspection reports.");
+        }
+        if (isEvcMember(auth)) {
+            throw new AccessDeniedException("EVC members are not authorized to submit reports directly. Operational coordinator review required.");
         }
 
         EvcVisit visit = findVisit(idOrReference);
@@ -343,6 +382,9 @@ public class EvcService {
         if (isInstitutionRepresentative(auth)) {
             throw new AccessDeniedException("Institution representatives are not authorized to reschedule EVC visits.");
         }
+        if (isEvcMember(auth)) {
+            throw new AccessDeniedException("EVC members are not authorized to reschedule EVC visits.");
+        }
 
         EvcVisit visit = findVisit(idOrReference);
 
@@ -398,6 +440,78 @@ public class EvcService {
         }
         return auth.getAuthorities().stream()
                 .anyMatch(a -> "ROLE_INSTITUTION_REPRESENTATIVE".equalsIgnoreCase(a.getAuthority()));
+    }
+
+    public boolean isEvcMember(Authentication auth) {
+        if (auth == null) {
+            return false;
+        }
+        return auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_EVC_MEMBER".equalsIgnoreCase(a.getAuthority()));
+    }
+
+    @Transactional(readOnly = true)
+    public List<EvcVisit> getVisitsAssignedToMember(String userIdOrMemberId) {
+        if (userIdOrMemberId == null || userIdOrMemberId.isBlank()) {
+            return Collections.emptyList();
+        }
+        Set<Long> visitIds = new LinkedHashSet<>();
+
+        // 1. Check assignments via database repository
+        if (evcMemberAssignmentRepository != null) {
+            List<EvcMemberAssignment> assignments = evcMemberAssignmentRepository.findByMemberUserUserId(userIdOrMemberId);
+            if (assignments.isEmpty()) {
+                assignments = evcMemberAssignmentRepository.findByMemberMemberId(userIdOrMemberId);
+            }
+            for (EvcMemberAssignment a : assignments) {
+                if (a.getEvcVisit() != null) {
+                    visitIds.add(a.getEvcVisit().getId());
+                }
+            }
+        }
+
+        // 2. Resolve member name for legacy JSON matching
+        String memberName = null;
+        if (evcMemberProfileRepository != null) {
+            Optional<EvcMemberProfile> prof = evcMemberProfileRepository.findByUserUserId(userIdOrMemberId)
+                    .or(() -> evcMemberProfileRepository.findByMemberId(userIdOrMemberId));
+            if (prof.isPresent()) {
+                memberName = prof.get().getFullName();
+            }
+        }
+        if (memberName == null && userRepository != null) {
+            Optional<User> u = userRepository.findByUserId(userIdOrMemberId)
+                    .or(() -> userRepository.findByEmailIgnoreCase(userIdOrMemberId));
+            if (u.isPresent()) {
+                memberName = u.get().getFullName();
+            }
+        }
+
+        // 3. Fallback matching against expertsJson
+        List<EvcVisit> allVisits = evcVisitRepository.findAll();
+        for (EvcVisit v : allVisits) {
+            if (visitIds.contains(v.getId())) continue;
+            String json = v.getExpertsJson();
+            if (json != null && !json.isBlank()) {
+                String lower = json.toLowerCase();
+                if (lower.contains(userIdOrMemberId.toLowerCase()) || (memberName != null && lower.contains(memberName.toLowerCase()))) {
+                    visitIds.add(v.getId());
+                }
+            }
+        }
+
+        return allVisits.stream().filter(v -> visitIds.contains(v.getId())).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isMemberAssignedToVisit(String userIdOrMemberId, EvcVisit visit) {
+        if (visit == null || userIdOrMemberId == null) return false;
+        List<EvcVisit> assigned = getVisitsAssignedToMember(userIdOrMemberId);
+        return assigned.stream().anyMatch(v -> Objects.equals(v.getId(), visit.getId()));
+    }
+
+    public EvcVisit findVisitByIdOrReference(String idOrReference) {
+        return findVisit(idOrReference);
     }
 
     private Institution resolveAuthenticatedInstitution(Authentication auth) {

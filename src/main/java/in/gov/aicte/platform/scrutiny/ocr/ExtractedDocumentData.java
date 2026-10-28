@@ -82,7 +82,7 @@ public class ExtractedDocumentData {
 
     public static ExtractedDocumentData unavailable(String reason) {
         ExtractedDocumentData data = new ExtractedDocumentData(
-                "", "OCR_UNAVAILABLE_FALLBACK", null, "UNAVAILABLE", 0, 1, "N/A (OCR Unavailable)"
+                "", "OCR_RETIRED_UNAVAILABLE", null, "UNAVAILABLE", 0, 1, "N/A (OCR Engine Retired)"
         );
         data.setErrorMessage(reason);
         return data;

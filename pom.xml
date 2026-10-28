@@ -68,28 +68,11 @@
 			<version>8.5.17</version>
 		</dependency>
 
-		<!-- Apache PDFBox for Searchable PDF Extraction & Scanned Page Rendering -->
+		<!-- Apache PDFBox for Digital Text Extraction from Searchable PDFs -->
 		<dependency>
 			<groupId>org.apache.pdfbox</groupId>
 			<artifactId>pdfbox</artifactId>
 			<version>3.0.4</version>
-		</dependency>
-
-		<!-- Tesseract OCR through Tess4J -->
-		<dependency>
-			<groupId>net.sourceforge.tess4j</groupId>
-			<artifactId>tess4j</artifactId>
-			<version>5.14.0</version>
-			<exclusions>
-				<exclusion>
-					<groupId>org.slf4j</groupId>
-					<artifactId>slf4j-log4j12</artifactId>
-				</exclusion>
-				<exclusion>
-					<groupId>log4j</groupId>
-					<artifactId>log4j</artifactId>
-				</exclusion>
-			</exclusions>
 		</dependency>
 
 		<!-- API Documentation (OpenAPI / Swagger UI) -->

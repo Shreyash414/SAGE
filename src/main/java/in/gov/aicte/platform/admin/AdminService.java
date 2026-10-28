@@ -25,12 +25,25 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+
+import in.gov.aicte.platform.evc.EvcMemberAssignment;
+import in.gov.aicte.platform.evc.EvcMemberAssignmentRepository;
+import in.gov.aicte.platform.evc.EvcMemberProfile;
+import in.gov.aicte.platform.evc.EvcMemberProfileRepository;
+import in.gov.aicte.platform.evc.EvcVisit;
+import in.gov.aicte.platform.evc.EvcVisitRepository;
+import in.gov.aicte.platform.evc.dto.AdminCreateEvcMemberRequest;
+import in.gov.aicte.platform.evc.dto.AdminUpdateEvcMemberRequest;
+import in.gov.aicte.platform.evc.dto.AssignEvcMemberRequest;
+import in.gov.aicte.platform.evc.dto.EvcMemberAssignmentResponse;
+import in.gov.aicte.platform.evc.dto.EvcMemberProfileResponse;
 
 @Service
 @Transactional
@@ -45,7 +58,8 @@ public class AdminService {
             "Scrutiny Officer",
             "EVC Coordinator",
             "Compliance Reviewer",
-            "Senior Management"
+            "Senior Management",
+            "EVC Member"
     );
 
     private final UserRepository userRepository;
@@ -53,6 +67,9 @@ public class AdminService {
     private final PasswordEncoder passwordEncoder;
     private final ObjectMapper objectMapper;
     private final DevTokenService devTokenService;
+    private final EvcMemberProfileRepository evcMemberProfileRepository;
+    private final EvcMemberAssignmentRepository evcMemberAssignmentRepository;
+    private final EvcVisitRepository evcVisitRepository;
 
     public AdminService(
             UserRepository userRepository,
@@ -61,11 +78,28 @@ public class AdminService {
             ObjectMapper objectMapper,
             DevTokenService devTokenService
     ) {
+        this(userRepository, auditEventRepository, passwordEncoder, objectMapper, devTokenService, null, null, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public AdminService(
+            UserRepository userRepository,
+            AuditEventRepository auditEventRepository,
+            PasswordEncoder passwordEncoder,
+            ObjectMapper objectMapper,
+            DevTokenService devTokenService,
+            @org.springframework.context.annotation.Lazy EvcMemberProfileRepository evcMemberProfileRepository,
+            @org.springframework.context.annotation.Lazy EvcMemberAssignmentRepository evcMemberAssignmentRepository,
+            @org.springframework.context.annotation.Lazy EvcVisitRepository evcVisitRepository
+    ) {
         this.userRepository = userRepository;
         this.auditEventRepository = auditEventRepository;
         this.passwordEncoder = passwordEncoder;
         this.objectMapper = objectMapper;
         this.devTokenService = devTokenService;
+        this.evcMemberProfileRepository = evcMemberProfileRepository;
+        this.evcMemberAssignmentRepository = evcMemberAssignmentRepository;
+        this.evcVisitRepository = evcVisitRepository;
     }
 
     @Transactional(readOnly = true)
@@ -122,6 +156,22 @@ public class AdminService {
         );
 
         User savedUser = userRepository.save(newUser);
+
+        if ("EVC Member".equalsIgnoreCase(targetRole) && evcMemberProfileRepository != null) {
+            String memberId = "MEM-" + generatedUserId;
+            EvcMemberProfile profile = new EvcMemberProfile(
+                    memberId,
+                    savedUser,
+                    savedUser.getFullName(),
+                    savedUser.getDesignation() != null ? savedUser.getDesignation() : "Expert Committee Member",
+                    savedUser.getInstitutionName() != null ? savedUser.getInstitutionName() : "AICTE Expert Panel",
+                    "Technical Committee Evaluation",
+                    "VERIFIED",
+                    "AVAILABLE",
+                    null
+            );
+            evcMemberProfileRepository.save(profile);
+        }
 
         // Record Audit Event
         Map<String, Object> auditMetadata = new LinkedHashMap<>();
@@ -320,6 +370,218 @@ public class AdminService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public List<EvcMemberProfileResponse> listEvcMembers(String search, String status, String region) {
+        if (evcMemberProfileRepository == null) return Collections.emptyList();
+        List<EvcMemberProfile> profiles = evcMemberProfileRepository.findAll();
+        return profiles.stream()
+                .filter(p -> {
+                    if (status != null && !status.isBlank()) {
+                        if (!status.equalsIgnoreCase(p.getVerificationStatus()) && !status.equalsIgnoreCase(p.getAvailabilityStatus())) {
+                            return false;
+                        }
+                    }
+                    if (region != null && !region.isBlank()) {
+                        String userRegion = p.getUser() != null ? p.getUser().getRegion() : null;
+                        if (userRegion == null || !userRegion.equalsIgnoreCase(region.trim())) {
+                            return false;
+                        }
+                    }
+                    if (search != null && !search.isBlank()) {
+                        String s = search.trim().toLowerCase();
+                        boolean matchName = p.getFullName() != null && p.getFullName().toLowerCase().contains(s);
+                        boolean matchEmail = p.getUser() != null && p.getUser().getEmail() != null && p.getUser().getEmail().toLowerCase().contains(s);
+                        boolean matchOrg = p.getOrganization() != null && p.getOrganization().toLowerCase().contains(s);
+                        boolean matchExp = p.getExpertise() != null && p.getExpertise().toLowerCase().contains(s);
+                        boolean matchMemId = p.getMemberId() != null && p.getMemberId().toLowerCase().contains(s);
+                        if (!matchName && !matchEmail && !matchOrg && !matchExp && !matchMemId) {
+                            return false;
+                        }
+                    }
+                    return true;
+                })
+                .map(p -> {
+                    long assignedCount = evcMemberAssignmentRepository != null ? evcMemberAssignmentRepository.countByMemberId(p.getId()) : 0;
+                    return EvcMemberProfileResponse.from(p, assignedCount);
+                })
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public EvcMemberProfileResponse getEvcMemberDetail(String idOrMemberId) {
+        EvcMemberProfile profile = findEvcMemberProfile(idOrMemberId);
+        long count = evcMemberAssignmentRepository != null ? evcMemberAssignmentRepository.countByMemberId(profile.getId()) : 0;
+        return EvcMemberProfileResponse.from(profile, count);
+    }
+
+    public EvcMemberProfileResponse createEvcMember(AdminCreateEvcMemberRequest request, String actingAdminId) {
+        String email = request.email().trim().toLowerCase();
+        if (userRepository.existsByEmailIgnoreCase(email)) {
+            throw new DuplicateResourceException("An account with email '" + email + "' already exists.");
+        }
+
+        String generatedUserId = "USR-EVCM-" + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+        String rawPassword = (request.password() != null && !request.password().isBlank())
+                ? request.password().trim()
+                : "SAGE@" + UUID.randomUUID().toString().substring(0, 8);
+        String encodedPassword = passwordEncoder.encode(rawPassword);
+
+        User newUser = new User(
+                generatedUserId,
+                request.fullName().trim(),
+                email,
+                encodedPassword,
+                "EVC Member",
+                "ACTIVE",
+                request.region() != null ? request.region().trim() : "Northern Region",
+                null,
+                request.organization().trim(),
+                request.designation().trim()
+        );
+        User savedUser = userRepository.save(newUser);
+
+        String memberId = "MEM-" + generatedUserId;
+        EvcMemberProfile profile = new EvcMemberProfile(
+                memberId,
+                savedUser,
+                request.fullName().trim(),
+                request.designation().trim(),
+                request.organization().trim(),
+                request.expertise().trim(),
+                "VERIFIED",
+                "AVAILABLE",
+                request.phone() != null ? request.phone().trim() : null
+        );
+        EvcMemberProfile savedProfile = evcMemberProfileRepository.save(profile);
+
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("action", "CREATE_EVC_MEMBER");
+        meta.put("memberId", memberId);
+        meta.put("userId", generatedUserId);
+        meta.put("email", email);
+        recordAuditLog("EVC_MEMBER_CREATED", actingAdminId, "EVC_MEMBER", memberId, "SUCCESS", meta);
+
+        return EvcMemberProfileResponse.from(savedProfile, 0);
+    }
+
+    public EvcMemberProfileResponse updateEvcMemberProfile(String idOrMemberId, AdminUpdateEvcMemberRequest request, String actingAdminId) {
+        EvcMemberProfile profile = findEvcMemberProfile(idOrMemberId);
+
+        if (request.fullName() != null && !request.fullName().isBlank()) {
+            profile.setFullName(request.fullName().trim());
+            if (profile.getUser() != null) {
+                profile.getUser().setFullName(request.fullName().trim());
+            }
+        }
+        if (request.designation() != null && !request.designation().isBlank()) {
+            profile.setDesignation(request.designation().trim());
+            if (profile.getUser() != null) {
+                profile.getUser().setDesignation(request.designation().trim());
+            }
+        }
+        if (request.organization() != null && !request.organization().isBlank()) {
+            profile.setOrganization(request.organization().trim());
+        }
+        if (request.expertise() != null && !request.expertise().isBlank()) {
+            profile.setExpertise(request.expertise().trim());
+        }
+        if (request.verificationStatus() != null && !request.verificationStatus().isBlank()) {
+            profile.setVerificationStatus(request.verificationStatus().trim().toUpperCase());
+        }
+        if (request.availabilityStatus() != null && !request.availabilityStatus().isBlank()) {
+            profile.setAvailabilityStatus(request.availabilityStatus().trim().toUpperCase());
+        }
+        if (request.phone() != null) {
+            profile.setPhone(request.phone().trim());
+        }
+        if (request.region() != null && profile.getUser() != null) {
+            profile.getUser().setRegion(request.region().trim());
+        }
+
+        EvcMemberProfile saved = evcMemberProfileRepository.save(profile);
+        if (profile.getUser() != null) {
+            userRepository.save(profile.getUser());
+        }
+
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("action", "UPDATE_EVC_MEMBER");
+        meta.put("memberId", profile.getMemberId());
+        recordAuditLog("EVC_MEMBER_UPDATED", actingAdminId, "EVC_MEMBER", profile.getMemberId(), "SUCCESS", meta);
+
+        long count = evcMemberAssignmentRepository != null ? evcMemberAssignmentRepository.countByMemberId(saved.getId()) : 0;
+        return EvcMemberProfileResponse.from(saved, count);
+    }
+
+    public EvcMemberAssignmentResponse assignMemberToVisit(String memberId, AssignEvcMemberRequest request, String actingAdminId) {
+        EvcMemberProfile profile = findEvcMemberProfile(memberId);
+        EvcVisit visit = evcVisitRepository.findById(request.evcVisitId())
+                .orElseThrow(() -> new ResourceNotFoundException("EVC visit not found with ID: " + request.evcVisitId()));
+
+        if (evcMemberAssignmentRepository.existsByEvcVisitIdAndMemberId(visit.getId(), profile.getId())) {
+            throw new DuplicateResourceException("Member " + profile.getMemberId() + " is already assigned to EVC visit " + visit.getEvcReference());
+        }
+
+        EvcMemberAssignment assignment = new EvcMemberAssignment(
+                visit,
+                profile,
+                request.committeeRole() != null ? request.committeeRole().trim() : "MEMBER",
+                request.notes() != null ? request.notes().trim() : null
+        );
+        EvcMemberAssignment saved = evcMemberAssignmentRepository.save(assignment);
+
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("action", "ASSIGN_EVC_MEMBER");
+        meta.put("memberId", profile.getMemberId());
+        meta.put("evcVisitId", visit.getId());
+        meta.put("evcReference", visit.getEvcReference());
+        recordAuditLog("EVC_MEMBER_ASSIGNED", actingAdminId, "EVC_MEMBER", profile.getMemberId(), "SUCCESS", meta);
+
+        return EvcMemberAssignmentResponse.from(saved);
+    }
+
+    public void removeMemberFromVisit(String memberId, Long visitId, String actingAdminId) {
+        EvcMemberProfile profile = findEvcMemberProfile(memberId);
+        EvcMemberAssignment assignment = evcMemberAssignmentRepository.findByEvcVisitIdAndMemberId(visitId, profile.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Assignment not found for member " + memberId + " and visit " + visitId));
+
+        evcMemberAssignmentRepository.delete(assignment);
+
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("action", "UNASSIGN_EVC_MEMBER");
+        meta.put("memberId", profile.getMemberId());
+        meta.put("evcVisitId", visitId);
+        recordAuditLog("EVC_MEMBER_UNASSIGNED", actingAdminId, "EVC_MEMBER", profile.getMemberId(), "SUCCESS", meta);
+    }
+
+    @Transactional(readOnly = true)
+    public List<EvcMemberAssignmentResponse> listMemberAssignments(String memberId) {
+        EvcMemberProfile profile = findEvcMemberProfile(memberId);
+        return evcMemberAssignmentRepository.findByMemberId(profile.getId())
+                .stream()
+                .map(EvcMemberAssignmentResponse::from)
+                .toList();
+    }
+
+    private EvcMemberProfile findEvcMemberProfile(String identifier) {
+        if (identifier == null || identifier.isBlank()) {
+            throw new ResourceNotFoundException("EVC member identifier cannot be empty.");
+        }
+        if (evcMemberProfileRepository == null) {
+            throw new ResourceNotFoundException("EVC Member repository not configured.");
+        }
+        return evcMemberProfileRepository.findByMemberId(identifier.trim())
+                .or(() -> evcMemberProfileRepository.findByUserUserId(identifier.trim()))
+                .or(() -> {
+                    try {
+                        Long id = Long.parseLong(identifier.trim());
+                        return evcMemberProfileRepository.findById(id);
+                    } catch (NumberFormatException e) {
+                        return evcMemberProfileRepository.findByUserEmailIgnoreCase(identifier.trim());
+                    }
+                })
+                .orElseThrow(() -> new ResourceNotFoundException("EVC member profile not found for: " + identifier));
+    }
+
     private String getRolePrefix(String role) {
         return switch (role) {
             case "Administrator" -> "ADM";
@@ -329,6 +591,7 @@ public class AdminService {
             case "EVC Coordinator" -> "EVC";
             case "Compliance Reviewer" -> "CR";
             case "Senior Management" -> "MGT";
+            case "EVC Member" -> "EVCM";
             default -> "USR";
         };
     }

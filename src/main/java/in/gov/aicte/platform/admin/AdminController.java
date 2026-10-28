@@ -31,7 +31,15 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import in.gov.aicte.platform.evc.dto.AdminCreateEvcMemberRequest;
+import in.gov.aicte.platform.evc.dto.AdminUpdateEvcMemberRequest;
+import in.gov.aicte.platform.evc.dto.AssignEvcMemberRequest;
+import in.gov.aicte.platform.evc.dto.EvcMemberAssignmentResponse;
+import in.gov.aicte.platform.evc.dto.EvcMemberProfileResponse;
+import org.springframework.web.bind.annotation.DeleteMapping;
+
 import java.net.URI;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -126,5 +134,76 @@ public class AdminController {
     @Operation(summary = "Get user activity overview", description = "Returns recent user authentication events and administrative changes")
     public ResponseEntity<Map<String, Object>> getActivity() {
         return ResponseEntity.ok(adminService.getRecentActivity());
+    }
+
+    // =========================================================================
+    // Dedicated EVC Member Account & Committee Management
+    // =========================================================================
+
+    @GetMapping("/evc-members")
+    @Operation(summary = "List EVC members", description = "Returns list of registered EVC committee members and their profiles")
+    public ResponseEntity<List<EvcMemberProfileResponse>> listEvcMembers(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String region
+    ) {
+        return ResponseEntity.ok(adminService.listEvcMembers(search, status, region));
+    }
+
+    @GetMapping("/evc-members/{idOrMemberId}")
+    @Operation(summary = "Get EVC member detail", description = "Returns profile and workload details for an EVC member")
+    public ResponseEntity<EvcMemberProfileResponse> getEvcMemberDetail(@PathVariable String idOrMemberId) {
+        return ResponseEntity.ok(adminService.getEvcMemberDetail(idOrMemberId));
+    }
+
+    @PostMapping("/evc-members")
+    @Operation(summary = "Create EVC member", description = "Provisions an EVC Member user account and initialized profile")
+    public ResponseEntity<EvcMemberProfileResponse> createEvcMember(
+            @Valid @RequestBody AdminCreateEvcMemberRequest request,
+            Authentication authentication
+    ) {
+        String actingAdminId = authentication != null ? authentication.getName() : "ADMIN";
+        EvcMemberProfileResponse created = adminService.createEvcMember(request, actingAdminId);
+        return ResponseEntity.created(URI.create("/api/v1/admin/evc-members/" + created.memberId())).body(created);
+    }
+
+    @PutMapping("/evc-members/{idOrMemberId}")
+    @Operation(summary = "Update EVC member profile", description = "Updates designation, organization, expertise, and status of an EVC member")
+    public ResponseEntity<EvcMemberProfileResponse> updateEvcMember(
+            @PathVariable String idOrMemberId,
+            @Valid @RequestBody AdminUpdateEvcMemberRequest request,
+            Authentication authentication
+    ) {
+        String actingAdminId = authentication != null ? authentication.getName() : "ADMIN";
+        return ResponseEntity.ok(adminService.updateEvcMemberProfile(idOrMemberId, request, actingAdminId));
+    }
+
+    @GetMapping("/evc-members/{memberId}/assignments")
+    @Operation(summary = "List member inspection assignments", description = "Returns visits assigned to an EVC member")
+    public ResponseEntity<List<EvcMemberAssignmentResponse>> listMemberAssignments(@PathVariable String memberId) {
+        return ResponseEntity.ok(adminService.listMemberAssignments(memberId));
+    }
+
+    @PostMapping("/evc-members/{memberId}/assign")
+    @Operation(summary = "Assign member to inspection visit", description = "Links an EVC member to an EVC inspection visit panel")
+    public ResponseEntity<EvcMemberAssignmentResponse> assignMemberToVisit(
+            @PathVariable String memberId,
+            @Valid @RequestBody AssignEvcMemberRequest request,
+            Authentication authentication
+    ) {
+        String actingAdminId = authentication != null ? authentication.getName() : "ADMIN";
+        return ResponseEntity.ok(adminService.assignMemberToVisit(memberId, request, actingAdminId));
+    }
+
+    @DeleteMapping("/evc-members/{memberId}/assign/{visitId}")
+    @Operation(summary = "Remove member from inspection visit", description = "Unlinks an EVC member from an inspection visit panel")
+    public ResponseEntity<Void> removeMemberFromVisit(
+            @PathVariable String memberId,
+            @PathVariable Long visitId,
+            Authentication authentication
+    ) {
+        String actingAdminId = authentication != null ? authentication.getName() : "ADMIN";
+        adminService.removeMemberFromVisit(memberId, visitId, actingAdminId);
+        return ResponseEntity.noContent().build();
     }
 }

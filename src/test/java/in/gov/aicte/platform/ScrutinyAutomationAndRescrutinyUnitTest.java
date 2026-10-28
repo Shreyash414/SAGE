@@ -55,11 +55,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-
-import in.gov.aicte.platform.scrutiny.ocr.TesseractOcrService;
-import net.sourceforge.tess4j.ITessAPI;
-import net.sourceforge.tess4j.ITesseract;
-import net.sourceforge.tess4j.Word;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -1036,8 +1031,7 @@ class ScrutinyAutomationAndRescrutinyUnitTest {
     @Test
     @DisplayName("Task 3 Acceptance Test 1: Searchable PDF has extracted text, but OCR confidence is NOT fabricated (reported as null / N/A)")
     void testTask3AcceptanceTest1_SearchablePdf_ExtractedTextAvailable_OcrConfidenceNotFabricated() throws Exception {
-        TesseractOcrService mockTessService = mock(TesseractOcrService.class);
-        DocumentTextExtractionService extractionService = new DocumentTextExtractionService(mockTessService);
+        DocumentTextExtractionService extractionService = new DocumentTextExtractionService();
 
         String certText = "Government Fire and Rescue Services Department No Objection Certificate for Fire Safety. Certificate No: NOC-2024-9988. Issued to ABC Institute of Technology. Valid Up To: 31/12/2026.";
         byte[] pdfBytes = createPdfWithText(certText);
@@ -1059,89 +1053,44 @@ class ScrutinyAutomationAndRescrutinyUnitTest {
     }
 
     @Test
-    @DisplayName("Task 3 Acceptance Test 2: Scanned PDF executes real OCR and reports its actual measured word-level confidence")
-    void testTask3AcceptanceTest2_ScannedPdf_RealOcrExecutesAndReportsActualConfidence() throws Exception {
-        ITesseract mockTesseract = mock(ITesseract.class);
-        when(mockTesseract.doOCR(any(BufferedImage.class))).thenReturn("GOVERNMENT FIRE SAFETY CERTIFICATE 2026");
-        when(mockTesseract.getWords(any(BufferedImage.class), eq(ITessAPI.TessPageIteratorLevel.RIL_WORD))).thenReturn(List.of(
-                new Word("GOVERNMENT", 85.0f, new Rectangle(0, 0, 10, 10)),
-                new Word("FIRE", 95.0f, new Rectangle(10, 0, 10, 10)),
-                new Word("SAFETY", 91.0f, new Rectangle(20, 0, 10, 10)),
-                new Word("CERTIFICATE", 85.0f, new Rectangle(30, 0, 10, 10))
-        ));
-
-        TesseractOcrService tesseractOcrService = new TesseractOcrService(mockTesseract);
-        DocumentTextExtractionService extractionService = new DocumentTextExtractionService(tesseractOcrService);
+    @DisplayName("Task 3 Acceptance Test 2: Scanned PDF returns UNAVAILABLE without fabricating false OCR scores or passes")
+    void testTask3AcceptanceTest2_ScannedPdf_ReturnsUnavailableWithoutFabricatingScores() throws Exception {
+        DocumentTextExtractionService extractionService = new DocumentTextExtractionService();
 
         byte[] scannedPdfBytes = createScannedPdfWithImage();
 
         ExtractedDocumentData result = extractionService.extractText(scannedPdfBytes, "Scanned_Fire_NOC.pdf", "application/pdf");
 
         assertThat(result).isNotNull();
-        assertThat(result.getExtractionMethod()).isEqualTo("TESSERACT_OCR_SCANNED");
-        assertThat(result.getOcrStatus()).isEqualTo("SUCCESS");
-
-        // Expected mean: (85 + 95 + 91 + 85) / 4 = 89.0% -> 0.8900
-        assertThat(result.getConfidenceScore()).isEqualTo(0.8900);
-        assertThat(result.getValidationMetric()).contains("OCR_MEASURED (89.0%)");
+        assertThat(result.getExtractionMethod()).isEqualTo("OCR_RETIRED_UNAVAILABLE");
+        assertThat(result.getOcrStatus()).isEqualTo("UNAVAILABLE");
+        assertThat(result.getConfidenceScore()).isNull();
+        assertThat(result.getValidationMetric()).isEqualTo("N/A (OCR Engine Retired)");
+        assertThat(result.getErrorMessage()).contains("Legacy OCR engine is retired");
+        assertThat(result.getPageCount()).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("Task 3 Acceptance Test 3: Different scanned documents reflect distinct measured confidences rather than a fixed constant (never 0.88)")
-    void testTask3AcceptanceTest3_DifferentScannedDocuments_ReflectActualResultsNotFixedConstant() throws Exception {
-        ITesseract mockTesseractA = mock(ITesseract.class);
-        when(mockTesseractA.doOCR(any(BufferedImage.class))).thenReturn("HIGH QUALITY SCAN TEXT");
-        when(mockTesseractA.getWords(any(BufferedImage.class), eq(ITessAPI.TessPageIteratorLevel.RIL_WORD))).thenReturn(List.of(
-                new Word("HIGH", 96.0f, new Rectangle(0, 0, 10, 10)),
-                new Word("QUALITY", 94.0f, new Rectangle(10, 0, 10, 10))
-        ));
-        TesseractOcrService ocrServiceA = new TesseractOcrService(mockTesseractA);
-        DocumentTextExtractionService extractionServiceA = new DocumentTextExtractionService(ocrServiceA);
+    @DisplayName("Task 3 Acceptance Test 3: Raster image documents return UNAVAILABLE without fabricating false scores")
+    void testTask3AcceptanceTest3_ImageDocuments_FlaggedAsUnavailableWithoutFabricatingScores() throws Exception {
+        DocumentTextExtractionService extractionService = new DocumentTextExtractionService();
 
-        ITesseract mockTesseractB = mock(ITesseract.class);
-        when(mockTesseractB.doOCR(any(BufferedImage.class))).thenReturn("DEGRADED SCAN TEXT");
-        when(mockTesseractB.getWords(any(BufferedImage.class), eq(ITessAPI.TessPageIteratorLevel.RIL_WORD))).thenReturn(List.of(
-                new Word("DEGRADED", 72.0f, new Rectangle(0, 0, 10, 10)),
-                new Word("SCAN", 70.0f, new Rectangle(10, 0, 10, 10))
-        ));
-        TesseractOcrService ocrServiceB = new TesseractOcrService(mockTesseractB);
-        DocumentTextExtractionService extractionServiceB = new DocumentTextExtractionService(ocrServiceB);
+        byte[] fakeImageBytes = new byte[]{1, 2, 3, 4, 5};
 
-        ITesseract mockTesseractC = mock(ITesseract.class);
-        when(mockTesseractC.doOCR(any(BufferedImage.class))).thenReturn("NOISY UNCERTAIN SCAN");
-        when(mockTesseractC.getWords(any(BufferedImage.class), eq(ITessAPI.TessPageIteratorLevel.RIL_WORD))).thenReturn(List.of(
-                new Word("NOISY", 45.0f, new Rectangle(0, 0, 10, 10)),
-                new Word("UNCERTAIN", 41.0f, new Rectangle(10, 0, 10, 10))
-        ));
-        TesseractOcrService ocrServiceC = new TesseractOcrService(mockTesseractC);
-        DocumentTextExtractionService extractionServiceC = new DocumentTextExtractionService(ocrServiceC);
+        ExtractedDocumentData resImage = extractionService.extractText(fakeImageBytes, "Scanned_Certificate.png", "image/png");
 
-        byte[] scannedPdf = createScannedPdfWithImage();
-
-        ExtractedDocumentData resA = extractionServiceA.extractText(scannedPdf, "DocA.pdf", "application/pdf");
-        ExtractedDocumentData resB = extractionServiceB.extractText(scannedPdf, "DocB.pdf", "application/pdf");
-        ExtractedDocumentData resC = extractionServiceC.extractText(scannedPdf, "DocC.pdf", "application/pdf");
-
-        // Verify values are not fixed constants (none are 0.88)
-        assertThat(resA.getConfidenceScore()).isEqualTo(0.9500);
-        assertThat(resB.getConfidenceScore()).isEqualTo(0.7100);
-        assertThat(resC.getConfidenceScore()).isEqualTo(0.4300);
-
-        assertThat(resA.getConfidenceScore()).isNotEqualTo(resB.getConfidenceScore());
-        assertThat(resB.getConfidenceScore()).isNotEqualTo(resC.getConfidenceScore());
-
-        // Document C is flagged as UNCERTAIN due to low confidence (< 0.60)
-        assertThat(resC.getOcrStatus()).isEqualTo("UNCERTAIN");
+        assertThat(resImage).isNotNull();
+        assertThat(resImage.getExtractionMethod()).isEqualTo("OCR_RETIRED_UNAVAILABLE");
+        assertThat(resImage.getOcrStatus()).isEqualTo("UNAVAILABLE");
+        assertThat(resImage.getConfidenceScore()).isNull();
+        assertThat(resImage.getValidationMetric()).isEqualTo("N/A (OCR Engine Retired)");
+        assertThat(resImage.getErrorMessage()).contains("Legacy OCR engine is retired");
     }
 
     @Test
     @DisplayName("Task 3 Acceptance Test 4: Blank or unreadable PDF reports appropriate failure or empty-text status")
     void testTask3AcceptanceTest4_BlankOrUnreadablePdf_ReportsAppropriateStatus() throws Exception {
-        ITesseract mockTesseract = mock(ITesseract.class);
-        when(mockTesseract.doOCR(any(BufferedImage.class))).thenReturn("");
-        when(mockTesseract.getWords(any(BufferedImage.class), eq(ITessAPI.TessPageIteratorLevel.RIL_WORD))).thenReturn(Collections.emptyList());
-        TesseractOcrService ocrService = new TesseractOcrService(mockTesseract);
-        DocumentTextExtractionService extractionService = new DocumentTextExtractionService(ocrService);
+        DocumentTextExtractionService extractionService = new DocumentTextExtractionService();
 
         // 1. Blank PDF
         byte[] blankPdf = createBlankPdf();
@@ -1209,7 +1158,7 @@ class ScrutinyAutomationAndRescrutinyUnitTest {
     @Test
     @DisplayName("Task 4.1: Upload DAA laboratory PDF -> genuine text matches contents, NO fake certificate details fabricated")
     void testTask4_DaaLabFilePdfExtractionMatchesContentsAndDoesNotFabricateFakeCertificateDetails() throws Exception {
-        DocumentTextExtractionService realTextExtraction = new DocumentTextExtractionService(new TesseractOcrService());
+        DocumentTextExtractionService realTextExtraction = new DocumentTextExtractionService();
 
         // Create genuine PDF bytes containing DAA laboratory file experiments
         String daaContent = "Department of Computer Science & Engineering\n" +
@@ -1330,7 +1279,7 @@ class ScrutinyAutomationAndRescrutinyUnitTest {
     @Test
     @DisplayName("Task 4.3: Different uploaded PDFs produce their own corresponding evidence without cross-leakage")
     void testTask4_DifferentUploadedPdfsProduceTheirOwnCorrespondingEvidence() throws Exception {
-        DocumentTextExtractionService realTextExtraction = new DocumentTextExtractionService(new TesseractOcrService());
+        DocumentTextExtractionService realTextExtraction = new DocumentTextExtractionService();
 
         // PDF 1: Fire Safety
         byte[] fireBytes = createPdfWithText(
@@ -1383,7 +1332,7 @@ class ScrutinyAutomationAndRescrutinyUnitTest {
     @Test
     @DisplayName("Task 4.4: Corrupted or unreadable PDF produces explicit FAILED extraction status and error message")
     void testTask4_UnreadableOrCorruptedPdfProducesExplicitExtractionFailureState() {
-        DocumentTextExtractionService realTextExtraction = new DocumentTextExtractionService(new TesseractOcrService());
+        DocumentTextExtractionService realTextExtraction = new DocumentTextExtractionService();
         byte[] corruptedBytes = new byte[]{0x00, 0x01, 0x02, 0x03, 0x7F, 0x10, 0x20};
 
         ExtractedDocumentData result = realTextExtraction.extractText(corruptedBytes, "corrupted_bad.pdf", "application/pdf");
@@ -1397,7 +1346,7 @@ class ScrutinyAutomationAndRescrutinyUnitTest {
     @Test
     @DisplayName("Task 4.5: Empty zero-byte PDF produces explicit EMPTY extraction status")
     void testTask4_EmptyZeroBytePdfProducesExplicitEmptyDocumentState() {
-        DocumentTextExtractionService realTextExtraction = new DocumentTextExtractionService(new TesseractOcrService());
+        DocumentTextExtractionService realTextExtraction = new DocumentTextExtractionService();
         byte[] emptyBytes = new byte[0];
 
         ExtractedDocumentData result = realTextExtraction.extractText(emptyBytes, "empty_file.pdf", "application/pdf");
@@ -1862,7 +1811,7 @@ class ScrutinyAutomationAndRescrutinyUnitTest {
         originalDocV1.setUploadedBy("USR-INST-01");
 
         // Real PDFBox extraction processes the actual uploaded PDF bytes
-        DocumentTextExtractionService realTextExtractor = new DocumentTextExtractionService(new TesseractOcrService());
+        DocumentTextExtractionService realTextExtractor = new DocumentTextExtractionService();
         ExtractedDocumentData rawExtracted = realTextExtractor.extractText(daaPdfBytes, "DAA_Lab_File_final.pdf", "application/pdf");
         org.junit.jupiter.api.Assertions.assertNotNull(rawExtracted.getRawText());
         org.junit.jupiter.api.Assertions.assertTrue(rawExtracted.getRawText().contains("Design and Analysis of Algorithms"));
@@ -2113,7 +2062,7 @@ class ScrutinyAutomationAndRescrutinyUnitTest {
         deficiency.setCorrectedDocumentVersion(2);
         deficiency.setStatus("RESPONSE_SUBMITTED");
 
-        DocumentTextExtractionService realTextExtractor = new DocumentTextExtractionService(new TesseractOcrService());
+        DocumentTextExtractionService realTextExtractor = new DocumentTextExtractionService();
         ReScrutinyService realReScrutinyService = new ReScrutinyService(
                 assessmentRepository,
                 scrutinyDeficiencyRepository,
@@ -2173,7 +2122,7 @@ class ScrutinyAutomationAndRescrutinyUnitTest {
                 scrutinyDeficiencyRepository,
                 extractionRepository,
                 comparisonRepository,
-                new DocumentTextExtractionService(new TesseractOcrService()),
+                new DocumentTextExtractionService(),
                 fieldExtractionService,
                 minioStorageService,
                 auditEventRepository,
@@ -2229,7 +2178,7 @@ class ScrutinyAutomationAndRescrutinyUnitTest {
         deficiency.setCorrectedDocumentVersion(2);
         deficiency.setStatus("RESPONSE_SUBMITTED");
 
-        DocumentTextExtractionService realTextExtractor = new DocumentTextExtractionService(new TesseractOcrService());
+        DocumentTextExtractionService realTextExtractor = new DocumentTextExtractionService();
         ReScrutinyService realReScrutinyService = new ReScrutinyService(
                 assessmentRepository,
                 scrutinyDeficiencyRepository,
@@ -2322,27 +2271,22 @@ class ScrutinyAutomationAndRescrutinyUnitTest {
     }
 
     @Test
-    @DisplayName("Acceptance Test: Scanned PDF -> Tess4J OCR extracts text, evaluates validity, and flags authenticity verification")
-    void testRealScannedFireSafetyPdfOcrExtraction() throws Exception {
+    @DisplayName("Acceptance Test: Scanned PDF -> Legacy OCR is retired; returns UNAVAILABLE and requires manual review")
+    void testScannedFireSafetyPdfOcrRetiredExplicitUnavailableAndManualReview() throws Exception {
         byte[] pdfBytes = java.nio.file.Files.readAllBytes(java.nio.file.Path.of("test-documents/04_ocr_edge_cases/15_Fire_Safety_SCANNED_IMAGE_ONLY.pdf"));
-        TesseractOcrService ocrService = new TesseractOcrService();
-        assertThat(ocrService.isAvailable()).isTrue();
+        DocumentTextExtractionService extractionService = new DocumentTextExtractionService();
+        assertThat(extractionService.isOcrAvailable()).isFalse();
 
-        DocumentTextExtractionService extractionService = new DocumentTextExtractionService(ocrService);
         ExtractedDocumentData data = extractionService.extractText(pdfBytes, "15_Fire_Safety_SCANNED_IMAGE_ONLY.pdf", "application/pdf");
 
-        // 1. Verify OCR Extraction Results
-        assertThat(data.getOcrStatus()).isEqualTo("SUCCESS");
-        assertThat(data.getExtractionMethod()).isEqualTo("TESSERACT_OCR_SCANNED");
-        assertThat(data.getTextCharacterCount()).isGreaterThan(1000);
-        assertThat(data.getConfidenceScore()).isNotNull();
-        assertThat(data.getConfidenceScore()).isGreaterThan(0.90);
-        assertThat(data.getRawText()).contains("FIRE SAFETY EXIT INSPECTION COMPLETE");
-        assertThat(data.getRawText()).contains("TEST-FIRE-SCAN-2026-01");
-        assertThat(data.getRawText()).contains("Valid Until 2027-09-01");
+        // 1. Verify Extraction Results reflect retired OCR (honest UNAVAILABLE status)
+        assertThat(data.getOcrStatus()).isEqualTo("UNAVAILABLE");
+        assertThat(data.getExtractionMethod()).isEqualTo("OCR_RETIRED_UNAVAILABLE");
+        assertThat(data.getConfidenceScore()).isNull();
+        assertThat(data.getValidationMetric()).isEqualTo("N/A (OCR Engine Retired)");
+        assertThat(data.getErrorMessage()).contains("Legacy OCR engine is retired");
 
-        // 2. Verify Field Extraction
-        DocumentFieldExtractionService fieldExtractionService = new DocumentFieldExtractionService();
+        // 2. Verify Scrutiny Validation: UNAVAILABLE triggers manual review and does NOT fabricate a false pass
         Application app = new Application();
         app.setId(1042L);
         app.setApplicationReference("APP-2026-1042");
@@ -2360,13 +2304,6 @@ class ScrutinyAutomationAndRescrutinyUnitTest {
         );
         doc.setId(501L);
 
-        ExtractedDocumentData structured = fieldExtractionService.extractStructuredFields(data, "DOC_FIRE_SAFETY", doc);
-        assertThat(structured.getFields().get("expiryDate")).isEqualTo("2027-09-01");
-        assertThat(structured.getFields().get("issueDate")).isEqualTo("2026-09-01");
-        assertThat(structured.getFields().get("certificateNumber")).isEqualTo("TEST-FIRE-SCAN-2026-01");
-        assertThat(structured.getFields().get("categoryPlausible")).isEqualTo(true);
-
-        // 3. Verify Statutory Rule Evaluation (without assuming readable text proves authenticity)
         ScrutinyAssessment assessment = new ScrutinyAssessment();
         assessment.setId(101L);
         assessment.setApplication(app);
@@ -2375,10 +2312,11 @@ class ScrutinyAutomationAndRescrutinyUnitTest {
         ScrutinyDocumentExtraction extraction = new ScrutinyDocumentExtraction(
                 assessment, 1042L, doc, "DOC_FIRE_SAFETY", "Fire Safety Certificate", 1,
                 data.getExtractionMethod(), data.getRawText(),
-                new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(structured.getFields()),
+                "{}",
                 data.getConfidenceScore(), data.getOcrStatus(), data.getTextCharacterCount(), data.getPageCount(), data.getValidationMetric()
         );
 
+        DocumentFieldExtractionService fieldExtractionService = new DocumentFieldExtractionService();
         ScrutinyValidationService validationService = new ScrutinyValidationService(
                 new in.gov.aicte.platform.application.catalogue.ApplicationTypeCatalogue(),
                 fieldExtractionService
@@ -2388,30 +2326,20 @@ class ScrutinyAutomationAndRescrutinyUnitTest {
                 assessment, app, List.of(doc), Map.of("DOC_FIRE_SAFETY", extraction), LocalDate.of(2026, 10, 28)
         );
 
-        // Technical container passes with OCR badge
-        var formatFinding = findings.stream().filter(f -> "RULE_DOC_FORMAT_VALID_DOC_FIRE_SAFETY".equals(f.getRuleCode())).findFirst().orElseThrow();
-        assertThat(formatFinding.getOutcome()).isEqualTo("PASS");
-        assertThat(formatFinding.getActualValue()).contains("FORMAT_VALID_SCANNED_OCR");
-        assertThat(formatFinding.getActualValue()).contains("95.4%");
-
-        // Statutory validity check passes date test
-        var validFinding = findings.stream().filter(f -> "RULE_FIRE_NOC_VALID".equals(f.getRuleCode())).findFirst().orElseThrow();
-        assertThat(validFinding.getOutcome()).isEqualTo("PASS");
-        assertThat(validFinding.getActualValue()).isEqualTo("VALID_TILL_2027-09-01");
-
-        // Requirement 9: Statutory rule engine flags authority seal/authenticity verification for Scrutiny Officer manual review
-        var authFinding = findings.stream().filter(f -> "RULE_FIRE_NOC_AUTHENTICITY_VERIFICATION".equals(f.getRuleCode())).findFirst().orElseThrow();
-        assertThat(authFinding.getOutcome()).isEqualTo("NEEDS_MANUAL_REVIEW");
-        assertThat(authFinding.getSeverity()).isEqualTo("WARNING");
-        assertThat(authFinding.getExplanation()).contains("readable OCR text alone does not substantiate legal authenticity");
+        // Explicit fallback: Scrutiny Officer manual review required, no false pass
+        var manualReviewFinding = findings.stream()
+                .filter(f -> f.getRuleCode().contains("RULE_OCR_NEEDS_MANUAL_REVIEW"))
+                .findFirst().orElseThrow();
+        assertThat(manualReviewFinding.getOutcome()).isEqualTo("NEEDS_MANUAL_REVIEW");
+        assertThat(manualReviewFinding.getSeverity()).isEqualTo("WARNING");
+        assertThat(manualReviewFinding.getExplanation()).contains("Officer must manually inspect");
     }
 
     @Test
     @DisplayName("Acceptance Test: Searchable PDF -> PDFBox extracts embedded text without OCR fabrication")
     void testSearchablePdfExtractsEmbeddedTextWithoutOcr() throws Exception {
         byte[] pdfBytes = java.nio.file.Files.readAllBytes(java.nio.file.Path.of("test-documents/01_baseline_category_samples/08_Corpus_Fund_Joint_FDR_Proof.pdf"));
-        TesseractOcrService ocrService = new TesseractOcrService();
-        DocumentTextExtractionService extractionService = new DocumentTextExtractionService(ocrService);
+        DocumentTextExtractionService extractionService = new DocumentTextExtractionService();
 
         ExtractedDocumentData data = extractionService.extractText(pdfBytes, "08_Corpus_Fund_Joint_FDR_Proof.pdf", "application/pdf");
 
@@ -2426,8 +2354,7 @@ class ScrutinyAutomationAndRescrutinyUnitTest {
     @Test
     @DisplayName("Acceptance Test: Empty and unreadable PDFs trigger explicit failure or manual review fallback")
     void testEmptyAndUnreadablePdfFallback() {
-        TesseractOcrService ocrService = new TesseractOcrService();
-        DocumentTextExtractionService extractionService = new DocumentTextExtractionService(ocrService);
+        DocumentTextExtractionService extractionService = new DocumentTextExtractionService();
 
         // 1. Zero bytes
         ExtractedDocumentData emptyData = extractionService.extractText(new byte[0], "empty.pdf", "application/pdf");
@@ -2483,7 +2410,7 @@ class ScrutinyAutomationAndRescrutinyUnitTest {
         );
         corpusMistakeDoc.setId(115L);
 
-        DocumentTextExtractionService extractionService = new DocumentTextExtractionService(new TesseractOcrService());
+        DocumentTextExtractionService extractionService = new DocumentTextExtractionService();
         ExtractedDocumentData corpusMistakeExtData = extractionService.extractText(nocBytes, "07_Affiliating_University_NOC.pdf", "application/pdf");
         ExtractedDocumentData corpusMistakeStructured = fieldExtractionService.extractStructuredFields(corpusMistakeExtData, "DOC_CORPUS_FUND", corpusMistakeDoc);
 

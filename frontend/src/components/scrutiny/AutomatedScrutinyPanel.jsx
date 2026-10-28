@@ -153,7 +153,7 @@ export const AutomatedScrutinyPanel = ({ application, onScrutinyComplete }) => {
   // Handler: Start Automated Scrutiny
   const handleRunScrutiny = async () => {
     setRunningScrutiny(true);
-    setStatusMessage({ type: 'info', text: 'Executing PDFBox text extraction, OCR rendering, and statutory compliance checks...' });
+    setStatusMessage({ type: 'info', text: 'Executing PDFBox text extraction and statutory compliance checks...' });
     try {
       const res = await runAutomatedScrutiny(appId);
       if (res.success) {
@@ -461,7 +461,7 @@ export const AutomatedScrutinyPanel = ({ application, onScrutinyComplete }) => {
               Automated Scrutiny &amp; Re-Scrutiny Intelligence System
             </h2>
             <p style={{ fontSize: '13px', color: '#CBD5E1', margin: 0, maxWidth: '650px' }}>
-              Autonomous PDFBox searchable text parsing and Tess4J OCR validation engine with statutory rule checking and multi-version document comparison.
+              Autonomous PDFBox searchable text parsing engine with statutory rule checking and multi-version document comparison.
             </p>
           </div>
 
@@ -657,7 +657,7 @@ export const AutomatedScrutinyPanel = ({ application, onScrutinyComplete }) => {
             gap: '6px',
           }}
         >
-          <FileText size={15} /> OCR &amp; Extracted Evidence ({report?.extractions?.length || 0})
+          <FileText size={15} /> Document &amp; Extracted Evidence ({report?.extractions?.length || 0})
         </button>
 
         <button
@@ -1238,16 +1238,16 @@ export const AutomatedScrutinyPanel = ({ application, onScrutinyComplete }) => {
             }}
           >
             <div style={{ fontWeight: '700', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px', color: '#0369A1' }}>
-              <AlertCircle size={15} /> Document Extraction & Optical Engine Transparency
+              <AlertCircle size={15} /> Document Extraction &amp; Verification Transparency
             </div>
             <div>
               <strong>Digital PDFBox Extraction:</strong> Directly parses native font character streams embedded in searchable PDFs. No optical recognition is performed; confidence is reported as <em>N/A (Embedded Text)</em> without artificial score fabrication.
             </div>
             <div style={{ marginTop: '2px' }}>
-              <strong>Tess4J OCR Engine:</strong> Renders and optically processes raster/scanned document pages. Reports measured aggregate word-level confidence.
+              <strong>Scanned / Image Documents:</strong> The legacy Tess4J OCR engine has been retired. Scanned documents or images lacking extractable digital text are flagged as <em>UNAVAILABLE</em> for manual Scrutiny Officer inspection.
             </div>
             <div style={{ marginTop: '4px', fontSize: '11px', color: '#0284C7', fontStyle: 'italic' }}>
-              * Regulatory Note: Extraction confidence measures optical text legibility only. High confidence does not independently substantiate legal authenticity or statutory compliance.
+              * Regulatory Note: Digital extraction legibility does not independently substantiate legal authenticity or statutory compliance.
             </div>
           </div>
 
@@ -1284,10 +1284,12 @@ export const AutomatedScrutinyPanel = ({ application, onScrutinyComplete }) => {
               {(report?.extractions || []).map((ext) => {
                 const isExpanded = expandedExtraction === ext.id;
                 const isPdfBox = ext.extractionMethod === 'PDFBOX_SEARCHABLE_TEXT' || ext.extractionMethod === 'APACHE_PDFBOX_TEXT';
-                const isOcr = ext.extractionMethod === 'TESSERACT_OCR_SCANNED' || ext.extractionMethod === 'TESSERACT_OCR_IMAGE';
+                const isRetiredOcr = ext.extractionMethod === 'OCR_RETIRED_UNAVAILABLE' || ext.extractionMethod === 'OCR_UNAVAILABLE_FALLBACK';
+                const isOcr = ext.extractionMethod === 'TESSERACT_OCR_SCANNED' || ext.extractionMethod === 'TESSERACT_OCR_IMAGE' || isRetiredOcr;
                 const isFailed = ext.ocrStatus === 'FAILED';
                 const isBlank = ext.ocrStatus === 'EMPTY' || ext.extractionMethod === 'EMPTY_DOCUMENT';
                 const isUncertain = ext.ocrStatus === 'UNCERTAIN';
+                const isUnavailable = ext.ocrStatus === 'UNAVAILABLE';
 
                 let rawFields = {};
                 try {
@@ -1416,7 +1418,7 @@ export const AutomatedScrutinyPanel = ({ application, onScrutinyComplete }) => {
                           )}
                           <span>·</span>
                           <span>
-                            Method: <strong>{isPdfBox ? 'PDFBox (Digital Text)' : isOcr ? (ext.extractionMethod === 'TESSERACT_OCR_SCANNED' ? 'Tess4J OCR (Scanned)' : 'Tess4J OCR (Image)') : ext.extractionMethod}</strong>
+                            Method: <strong>{isPdfBox ? 'PDFBox (Digital Text)' : isRetiredOcr ? 'Legacy OCR Retired (Manual Review)' : isOcr ? (ext.extractionMethod === 'TESSERACT_OCR_SCANNED' ? 'Legacy OCR (Scanned)' : 'Legacy OCR (Image)') : ext.extractionMethod}</strong>
                           </span>
                           <span>·</span>
                           <span>
@@ -1424,10 +1426,10 @@ export const AutomatedScrutinyPanel = ({ application, onScrutinyComplete }) => {
                             <strong
                               style={{
                                 color:
-                                  ext.ocrStatus === 'SUCCESS' ? '#16A34A' : ext.ocrStatus === 'UNCERTAIN' ? '#D97706' : '#DC2626',
+                                  ext.ocrStatus === 'SUCCESS' ? '#16A34A' : ext.ocrStatus === 'UNCERTAIN' ? '#D97706' : ext.ocrStatus === 'UNAVAILABLE' ? '#D97706' : '#DC2626',
                               }}
                             >
-                              {isPdfBox && ext.ocrStatus === 'SUCCESS' ? 'SUCCESS (Native Text)' : ext.ocrStatus}
+                              {isPdfBox && ext.ocrStatus === 'SUCCESS' ? 'SUCCESS (Native Text)' : isUnavailable ? 'UNAVAILABLE (Manual Review Required)' : ext.ocrStatus}
                             </strong>
                           </span>
                           <span>·</span>
@@ -1439,7 +1441,7 @@ export const AutomatedScrutinyPanel = ({ application, onScrutinyComplete }) => {
                               </strong>
                             ) : (
                               <span style={{ color: '#64748B', fontStyle: 'italic', background: '#F1F5F9', padding: '1px 6px', borderRadius: '3px' }}>
-                                {isPdfBox ? 'N/A (Embedded Text)' : isBlank ? 'N/A (Empty Document)' : ext.validationMetric || 'N/A'}
+                                {isPdfBox ? 'N/A (Embedded Text)' : isRetiredOcr ? 'N/A (OCR Retired)' : isBlank ? 'N/A (Empty Document)' : ext.validationMetric || 'N/A'}
                               </span>
                             )}
                           </span>
@@ -1549,7 +1551,7 @@ export const AutomatedScrutinyPanel = ({ application, onScrutinyComplete }) => {
                               <XCircle size={15} /> Document Extraction Failed
                             </div>
                             <div>
-                              {ext.errorMessage || 'The document stream could not be parsed by PDFBox or Tess4J. The binary file may be corrupted, password-protected, or in an unsupported format.'}
+                              {ext.errorMessage || 'The document stream could not be parsed by PDFBox. The binary file may be corrupted, password-protected, or in an unsupported format.'}
                             </div>
                           </div>
                         )}
@@ -1619,21 +1621,21 @@ export const AutomatedScrutinyPanel = ({ application, onScrutinyComplete }) => {
                             </div>
                           </div>
                           <div>
-                            <div style={{ fontSize: '10px', color: '#64748B', fontWeight: '700', textTransform: 'uppercase' }}>OCR Status</div>
-                            <div style={{ fontSize: '12px', fontWeight: '700', marginTop: '2px', color: ext.ocrStatus === 'SUCCESS' ? '#16A34A' : '#DC2626' }}>
+                            <div style={{ fontSize: '10px', color: '#64748B', fontWeight: '700', textTransform: 'uppercase' }}>Extraction Status</div>
+                            <div style={{ fontSize: '12px', fontWeight: '700', marginTop: '2px', color: ext.ocrStatus === 'SUCCESS' ? '#16A34A' : ext.ocrStatus === 'UNAVAILABLE' ? '#D97706' : '#DC2626' }}>
                               {ext.ocrStatus}
                             </div>
                           </div>
                           <div>
                             <div style={{ fontSize: '10px', color: '#64748B', fontWeight: '700', textTransform: 'uppercase' }}>Optical Reliability</div>
                             <div style={{ fontSize: '12px', color: '#0F172A', fontWeight: '600', marginTop: '2px' }}>
-                              {ext.confidenceScore != null ? `${Math.round(ext.confidenceScore * 1000) / 10}% (Tess4J Aggregate)` : 'N/A (Direct Digital Extraction)'}
+                              {ext.confidenceScore != null ? `${Math.round(ext.confidenceScore * 1000) / 10}% (Measured)` : (isPdfBox ? 'N/A (Direct Digital Extraction)' : 'N/A (OCR Engine Retired)')}
                             </div>
                           </div>
                           <div>
                             <div style={{ fontSize: '10px', color: '#64748B', fontWeight: '700', textTransform: 'uppercase' }}>Validation Metric</div>
                             <div style={{ fontSize: '12px', color: '#0F172A', fontWeight: '600', marginTop: '2px' }}>
-                              {ext.validationMetric || (ext.confidenceScore != null ? 'OCR_MEASURED' : 'N/A (Embedded Text)')}
+                              {ext.validationMetric || (ext.confidenceScore != null ? 'OCR_MEASURED' : (isPdfBox ? 'N/A (Embedded Text)' : 'N/A (OCR Retired)'))}
                             </div>
                           </div>
                           <div>

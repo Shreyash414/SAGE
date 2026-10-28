@@ -1,14 +1,16 @@
 // SIH 26262 - Shared Navy Sidebar Component with Role-Based Navigation
 
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { getNavItemsForRole } from '../../utils/permissions';
 import * as Icons from 'lucide-react';
 
 export const Sidebar = () => {
   const { user, role } = useAuth();
+  const location = useLocation();
   const navItems = getNavItemsForRole(role);
+  const currentPathWithSearch = location.pathname + location.search;
 
   return (
     <aside
@@ -95,20 +97,25 @@ export const Sidebar = () => {
             <NavLink
               key={item.path}
               to={item.path}
-              style={({ isActive }) => ({
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '9px 12px',
-                margin: '2px 0',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: '12px',
-                fontWeight: isActive ? '700' : '500',
-                color: isActive ? '#FFFFFF' : '#D1DFED',
-                backgroundColor: isActive ? 'var(--color-navy-light)' : 'transparent',
-                borderLeft: isActive ? '3px solid #65C5CB' : '3px solid transparent',
-                transition: 'background-color 0.15s',
-              })}
+              style={({ isActive }) => {
+                const isItemActive = item.path.includes('?')
+                  ? currentPathWithSearch === item.path || (location.pathname === '/dashboard' && !location.search && item.path.endsWith('overview'))
+                  : isActive;
+                return {
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '9px 12px',
+                  margin: '2px 0',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '12px',
+                  fontWeight: isItemActive ? '700' : '500',
+                  color: isItemActive ? '#FFFFFF' : '#D1DFED',
+                  backgroundColor: isItemActive ? 'var(--color-navy-light)' : 'transparent',
+                  borderLeft: isItemActive ? '3px solid #65C5CB' : '3px solid transparent',
+                  transition: 'background-color 0.15s',
+                };
+              }}
             >
               <IconComponent size={16} style={{ flexShrink: 0, opacity: 0.9 }} />
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
