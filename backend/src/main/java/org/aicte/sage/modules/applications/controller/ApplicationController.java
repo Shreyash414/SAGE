@@ -1,0 +1,191 @@
+package org.aicte.sage.modules.applications.controller;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import org.aicte.sage.common.api.ApiResponse;
+import org.aicte.sage.common.api.PageResponse;
+import org.aicte.sage.common.security.SecurityUtils;
+import org.aicte.sage.common.security.UserPrincipal;
+import org.aicte.sage.modules.applications.dto.ApplicationDto;
+import org.aicte.sage.modules.applications.dto.BranchDetailsDto;
+import org.aicte.sage.modules.applications.dto.CourseDetailsDto;
+import org.aicte.sage.modules.applications.dto.CreateApplicationRequest;
+import org.aicte.sage.modules.applications.dto.SaveBranchDetailsRequest;
+import org.aicte.sage.modules.applications.dto.SaveCourseDetailsRequest;
+import org.aicte.sage.modules.applications.model.ApplicationCategory;
+import org.aicte.sage.modules.applications.model.ApplicationState;
+import org.aicte.sage.modules.applications.service.ApplicationService;
+import org.aicte.sage.modules.workflow.dto.TransitionRequest;
+import org.aicte.sage.modules.workflow.dto.WorkflowTransitionDto;
+import org.aicte.sage.modules.workflow.service.WorkflowEngineService;
+import org.aicte.sage.modules.applications.dto.StatutoryRequirementDefinitionDto;
+import org.aicte.sage.modules.applications.dto.SubmissionReadinessDto;
+import org.aicte.sage.modules.applications.service.SubmissionReadinessService;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/api/v1/applications")
+@Tag(name = "Applications & Approval Workflows", description = "AICTE Approval applications and workflow engine lifecycle")
+public class ApplicationController {
+
+    private final ApplicationService applicationService;
+    private final WorkflowEngineService workflowEngineService;
+    private final SubmissionReadinessService submissionReadinessService;
+
+    public ApplicationController(
+            ApplicationService applicationService,
+            WorkflowEngineService workflowEngineService,
+            SubmissionReadinessService submissionReadinessService
+    ) {
+        this.applicationService = applicationService;
+        this.workflowEngineService = workflowEngineService;
+        this.submissionReadinessService = submissionReadinessService;
+    }
+
+    private UserPrincipal getCurrentPrincipal() {
+        return SecurityUtils.getCurrentUserPrincipal()
+                .orElseThrow(() -> new IllegalStateException("Unauthenticated request"));
+    }
+
+    @PostMapping
+    @PreAuthorize("hasAuthority('APPLICATION_CREATE')")
+    @Operation(summary = "Initiate new approval application", description = "Creates a new application draft for an institution")
+    public ResponseEntity<ApiResponse<ApplicationDto>> createApplication(
+            @Valid @RequestBody CreateApplicationRequest request
+    ) {
+        ApplicationDto dto = applicationService.createApplication(request, getCurrentPrincipal());
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok("Application created successfully", dto));
+    }
+
+    @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('APPLICATION_READ')")
+    @Operation(summary = "Get application details", description = "Retrieves application status and workflow information")
+    public ResponseEntity<ApiResponse<ApplicationDto>> getApplication(
+            @PathVariable UUID id
+    ) {
+        ApplicationDto dto = applicationService.getApplication(id, getCurrentPrincipal());
+        return ResponseEntity.ok(ApiResponse.ok(dto));
+    }
+
+    @GetMapping
+    @PreAuthorize("hasAuthority('APPLICATION_READ')")
+    @Operation(summary = "List applications", description = "Search and paginate approval applications with tenant isolation")
+    public ResponseEntity<ApiResponse<PageResponse<ApplicationDto>>> listApplications(
+            @RequestParam(required = false) UUID institutionId,
+            @RequestParam(required = false) ApplicationState state,
+            @RequestParam(required = false) ApplicationCategory category,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size
+    ) {
+        PageResponse<ApplicationDto> response = applicationService.listApplications(institutionId, state, category, page, size, getCurrentPrincipal());
+        return ResponseEntity.ok(ApiResponse.ok(response));
+    }
+
+    @PostMapping("/{id}/submit")
+    @PreAuthorize("hasAuthority('APPLICATION_SUBMIT')")
+    @Operation(summary = "Submit application", description = "Transitions an application draft to SUBMITTED")
+    public ResponseEntity<ApiResponse<WorkflowTransitionDto>> submitApplication(
+            @PathVariable UUID id
+    ) {
+        WorkflowTransitionDto dto = applicationService.submitApplication(id, getCurrentPrincipal());
+        return ResponseEntity.ok(ApiResponse.ok("Application submitted successfully", dto));
+    }
+
+    @PostMapping("/{id}/transitions")
+    @PreAuthorize("hasAnyRole('ROLE_AICTE_ADMIN', 'ROLE_REGIONAL_OFFICER', 'ROLE_COMMITTEE_MEMBER', 'ROLE_INSTITUTION_OFFICER') or hasAuthority('WORKFLOW_TRANSITION') or hasAuthority('APPLICATION_SUBMIT')")
+    @Operation(summary = "Execute state transition", description = "Performs an authorized statutory workflow transition")
+    public ResponseEntity<ApiResponse<WorkflowTransitionDto>> transitionState(
+            @PathVariable UUID id,
+            @Valid @RequestBody TransitionRequest request
+    ) {
+        WorkflowTransitionDto dto = workflowEngineService.transitionState(id, request, getCurrentPrincipal());
+        return ResponseEntity.ok(ApiResponse.ok("Transition executed successfully", dto));
+    }
+
+    @GetMapping("/{id}/transitions")
+    @PreAuthorize("hasAuthority('APPLICATION_READ')")
+    @Operation(summary = "Get transition history", description = "Retrieves complete chronological audit trail of state transitions")
+    public ResponseEntity<ApiResponse<List<WorkflowTransitionDto>>> getTransitions(
+            @PathVariable UUID id
+    ) {
+        List<WorkflowTransitionDto> history = workflowEngineService.getTransitionsForApplication(id, getCurrentPrincipal());
+        return ResponseEntity.ok(ApiResponse.ok(history));
+    }
+
+    @PostMapping("/{id}/withdraw")
+    @PreAuthorize("hasAuthority('APPLICATION_SUBMIT')")
+    @Operation(summary = "Withdraw application", description = "Allows applicant institution to withdraw application")
+    public ResponseEntity<ApiResponse<WorkflowTransitionDto>> withdrawApplication(
+            @PathVariable UUID id,
+            @RequestParam(required = false) String reason
+    ) {
+        WorkflowTransitionDto dto = applicationService.withdrawApplication(id, reason, getCurrentPrincipal());
+        return ResponseEntity.ok(ApiResponse.ok("Application withdrawn", dto));
+    }
+
+    @PostMapping("/{id}/course-details")
+    @PreAuthorize("hasAuthority('APPLICATION_CREATE')")
+    @Operation(summary = "Save new course details", description = "Saves or updates course details for a New Course application draft")
+    public ResponseEntity<ApiResponse<CourseDetailsDto>> saveCourseDetails(
+            @PathVariable UUID id,
+            @Valid @RequestBody SaveCourseDetailsRequest request
+    ) {
+        CourseDetailsDto dto = applicationService.saveCourseDetails(id, request, getCurrentPrincipal());
+        return ResponseEntity.ok(ApiResponse.ok("Course details saved successfully", dto));
+    }
+
+    @GetMapping("/{id}/course-details")
+    @PreAuthorize("hasAuthority('APPLICATION_READ')")
+    @Operation(summary = "Get course details", description = "Retrieves course details for an application")
+    public ResponseEntity<ApiResponse<CourseDetailsDto>> getCourseDetails(
+            @PathVariable UUID id
+    ) {
+        CourseDetailsDto dto = applicationService.getCourseDetails(id, getCurrentPrincipal());
+        return ResponseEntity.ok(ApiResponse.ok(dto));
+    }
+
+    @PostMapping("/{id}/branch-details")
+    @PreAuthorize("hasAuthority('APPLICATION_CREATE')")
+    @Operation(summary = "Save new branch details", description = "Saves or updates branch details for a New Branch application draft")
+    public ResponseEntity<ApiResponse<BranchDetailsDto>> saveBranchDetails(
+            @PathVariable UUID id,
+            @Valid @RequestBody SaveBranchDetailsRequest request
+    ) {
+        BranchDetailsDto dto = applicationService.saveBranchDetails(id, request, getCurrentPrincipal());
+        return ResponseEntity.ok(ApiResponse.ok("Branch details saved successfully", dto));
+    }
+
+    @GetMapping("/{id}/branch-details")
+    @PreAuthorize("hasAuthority('APPLICATION_READ')")
+    @Operation(summary = "Get branch details", description = "Retrieves branch details for an application")
+    public ResponseEntity<ApiResponse<BranchDetailsDto>> getBranchDetails(
+            @PathVariable UUID id
+    ) {
+        BranchDetailsDto dto = applicationService.getBranchDetails(id, getCurrentPrincipal());
+        return ResponseEntity.ok(ApiResponse.ok(dto));
+    }
+
+    @GetMapping("/{id}/submission-readiness")
+    @PreAuthorize("hasAuthority('APPLICATION_READ') or hasRole('ROLE_INSTITUTION_OFFICER')")
+    @Operation(summary = "Get application submission readiness", description = "Evaluates statutory document completeness and AI forgery risk before submission")
+    public ResponseEntity<ApiResponse<SubmissionReadinessDto>> getSubmissionReadiness(@PathVariable UUID id) {
+        SubmissionReadinessDto readiness = applicationService.getSubmissionReadiness(id, getCurrentPrincipal());
+        return ResponseEntity.ok(ApiResponse.ok(readiness));
+    }
+
+    @GetMapping("/category-requirements")
+    @Operation(summary = "Get mandatory requirements for an application category", description = "Returns required document checklist for a specific approval category per APH norms")
+    public ResponseEntity<ApiResponse<List<StatutoryRequirementDefinitionDto>>> getCategoryRequirements(
+            @RequestParam(defaultValue = "NEW_COURSE_INTRODUCTION") ApplicationCategory category
+    ) {
+        List<StatutoryRequirementDefinitionDto> requirements = submissionReadinessService.getCategoryRequirements(category);
+        return ResponseEntity.ok(ApiResponse.ok(requirements));
+    }
+}
