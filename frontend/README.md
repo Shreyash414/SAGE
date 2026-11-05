@@ -1,53 +1,75 @@
-# SIH 26262 - Technical Institution Approval & Compliance Frontend
+# React + TypeScript + Vite
 
-React 19 + Vite frontend client for the AICTE Approval & Compliance Orchestration Platform.
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-## Integration Overview
+Currently, two official plugins are available:
 
-This frontend connects to the Spring Boot 3.4.3 + PostgreSQL 18 backend for:
-- Server-side development Bearer authentication via `POST /api/v1/auth/token`.
-- Application list and detail retrieval from PostgreSQL via `GET /api/v1/applications`.
-- Live workflow actions persisted directly to PostgreSQL via `POST /api/v1/applications/{id}/actions`:
-  - `RETURN_FOR_CORRECTION`
-  - `SUBMIT_CORRECTIONS`
-  - `COMPLETE_SCRUTINY`
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
 
-Non-workflow modules (EVC Scheduling, Compliance Obligations, Statutory Documents, and Alerts) remain safely stored in browser `localStorage` as designed for this milestone.
+## React Compiler
 
-## Prerequisites
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
-- Node.js 18+ (tested on Node.js 20/22/26)
-- Running backend server at `http://localhost:8080`
+## Expanding the ESLint configuration
 
-## Configuration
+If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
 
-Set the API base URL in `.env` (or accept default):
-```dotenv
-VITE_API_BASE_URL=http://localhost:8080/api/v1
+```js
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      // Other configs...
+
+      // Remove tseslint.configs.recommended and replace with this
+      tseslint.configs.recommendedTypeChecked,
+      // Alternatively, use this for stricter rules
+      tseslint.configs.strictTypeChecked,
+      // Optionally, add this for stylistic rules
+      tseslint.configs.stylisticTypeChecked,
+
+      // Other configs...
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.node.json', './tsconfig.app.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+])
+
 ```
 
-## Running Locally
+You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
 
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
+```js
+// eslint.config.js
+import reactX from 'eslint-plugin-react-x'
+import reactDom from 'eslint-plugin-react-dom'
 
-2. Start the development server:
-   ```bash
-   npm run dev
-   ```
-   Open `http://localhost:5173`.
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      // Other configs...
+      // Enable lint rules for React
+      reactX.configs['recommended-typescript'],
+      // Enable lint rules for React DOM
+      reactDom.configs.recommended,
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.node.json', './tsconfig.app.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+])
 
-3. Build production bundle:
-   ```bash
-   npm run build
-   ```
-
-## Workflow Demonstration Journey
-
-1. **Role Authentication**: Switch role in the top-right header (e.g. Scrutiny Officer). The app calls `POST /api/v1/auth/token` and stores the Bearer token.
-2. **Application Dossier**: Navigate to `/applications/APP-2026-1042`. Real data is fetched from PostgreSQL.
-3. **Return for Correction**: Click "Return for Correction", fill in deficiencies, and submit. The backend persists the transition in PostgreSQL.
-4. **Submit Corrections**: Switch role to Institution Representative and submit rectifications.
-5. **Complete Scrutiny**: Switch back to Scrutiny Officer and complete scrutiny to advance the application to `EVC scheduling`.
+```

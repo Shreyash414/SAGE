@@ -1,334 +1,241 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# SAGE — Institutional Approval & Compliance Platform
-# Master Service Runner: Database -> Backend API -> User Frontend -> Admin Panel
+# SAGE — Smart AICTE Governance Engine
+# Complete Platform Runner Script (Backend, Automation & Frontend)
+# SIH 2026 Problem Statement 26262
 # ==============================================================================
+set -euo pipefail
 
-set -eo pipefail
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$PROJECT_ROOT"
+# ANSI Terminal Colors
+BOLD='\033[1m'
+NAVY='\033[38;5;18m'
+BLUE='\033[38;5;33m'
+CYAN='\033[38;5;51m'
+GREEN='\033[38;5;42m'
+SAFFRON='\033[38;5;214m'
+RED='\033[38;5;196m'
+MUTED='\033[38;5;244m'
+NC='\033[0m'
 
-# Load local environment variables if .env exists
-if [ -f "$PROJECT_ROOT/.env" ]; then
-  # shellcheck source=/dev/null
-  set -a
-  source "$PROJECT_ROOT/.env"
-  set +a
-fi
+LOG_DIR="${ROOT_DIR}/.logs"
+mkdir -p "${LOG_DIR}"
 
-DB_HOST="${DB_HOST:-localhost}"
-DB_PORT="${DB_PORT:-5432}"
-DB_USER="${DB_USER:-aicte_app_user}"
-DB_NAME="${DB_NAME:-aicte_platform_db}"
-SERVER_PORT="${SERVER_PORT:-8080}"
-FRONTEND_PORT="${FRONTEND_PORT:-5173}"
-ADMIN_PORT="${ADMIN_PORT:-5174}"
+AUTOMATION_LOG="${LOG_DIR}/automation.log"
+BACKEND_LOG="${LOG_DIR}/backend.log"
+FRONTEND_LOG="${LOG_DIR}/frontend.log"
 
-MINIO_PORT="${MINIO_PORT:-9000}"
-MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-9001}"
-
-# Colors
-C_RESET='\033[0m'
-C_BOLD='\033[1m'
-C_GREEN='\033[32m'
-C_BLUE='\033[34m'
-C_YELLOW='\033[33m'
-C_CYAN='\033[36m'
-C_RED='\033[31m'
-
-echo -e "${C_BOLD}${C_BLUE}==============================================================================${C_RESET}"
-echo -e "${C_BOLD}${C_CYAN}    SAGE — Institutional Approval & Compliance Platform${C_RESET}"
-echo -e "${C_BOLD}${C_BLUE}==============================================================================${C_RESET}"
-
-# PID tracking for clean teardown
-BACKEND_PID=""
-FRONTEND_PID=""
-ADMIN_PID=""
-MINIO_PID=""
+PID_AUTOMATION=0
+PID_BACKEND=0
+PID_FRONTEND=0
 
 cleanup() {
-  echo ""
-  echo -e "${C_YELLOW}>>> Initiating graceful shutdown of all platform services...${C_RESET}"
-  if [ -n "$ADMIN_PID" ] && kill -0 "$ADMIN_PID" 2>/dev/null; then
-    echo -e "Stopping Admin Frontend (PID: $ADMIN_PID)..."
-    kill "$ADMIN_PID" 2>/dev/null || true
+  echo -e "\n${SAFFRON}${BOLD}Initiating graceful shutdown of all SAGE services...${NC}"
+
+  if [ "${PID_FRONTEND}" -ne 0 ] && kill -0 "${PID_FRONTEND}" 2>/dev/null; then
+    echo -e "  ${MUTED}• Stopping React Frontend (PID: ${PID_FRONTEND})...${NC}"
+    kill -TERM "${PID_FRONTEND}" 2>/dev/null || true
   fi
-  if [ -n "$FRONTEND_PID" ] && kill -0 "$FRONTEND_PID" 2>/dev/null; then
-    echo -e "Stopping User Frontend (PID: $FRONTEND_PID)..."
-    kill "$FRONTEND_PID" 2>/dev/null || true
+
+  if [ "${PID_BACKEND}" -ne 0 ] && kill -0 "${PID_BACKEND}" 2>/dev/null; then
+    echo -e "  ${MUTED}• Stopping Spring Boot Backend (PID: ${PID_BACKEND})...${NC}"
+    kill -TERM "${PID_BACKEND}" 2>/dev/null || true
   fi
-  if [ -n "$BACKEND_PID" ] && kill -0 "$BACKEND_PID" 2>/dev/null; then
-    echo -e "Stopping Backend (PID: $BACKEND_PID)..."
-    kill "$BACKEND_PID" 2>/dev/null || true
+
+  if [ "${PID_AUTOMATION}" -ne 0 ] && kill -0 "${PID_AUTOMATION}" 2>/dev/null; then
+    echo -e "  ${MUTED}• Stopping Python Automation Engine (PID: ${PID_AUTOMATION})...${NC}"
+    kill -TERM "${PID_AUTOMATION}" 2>/dev/null || true
   fi
-  if [ -n "$MINIO_PID" ] && kill -0 "$MINIO_PID" 2>/dev/null; then
-    echo -e "Stopping MinIO Object Storage (PID: $MINIO_PID)..."
-    kill "$MINIO_PID" 2>/dev/null || true
-  fi
-  echo -e "${C_GREEN}>>> All services stopped cleanly.${C_RESET}"
+
+  # Fallback check for lingering port listeners
+  sleep 1
+  for PORT in 5173 8080 8000; do
+    if command -v fuser >/dev/null 2>&1; then
+      fuser -k -9 "${PORT}/tcp" 2>/dev/null || true
+    fi
+    PIDS="$(lsof -ti :${PORT} 2>/dev/null || true)"
+    if [ -n "${PIDS}" ]; then
+      kill -9 ${PIDS} 2>/dev/null || true
+    fi
+  done
+
+  echo -e "${GREEN}${BOLD}✔ All SAGE platform services terminated cleanly.${NC}"
   exit 0
 }
 
-trap cleanup SIGINT SIGTERM EXIT
+trap cleanup SIGINT SIGTERM SIGHUP EXIT
+
+clear 2>/dev/null || true
+
+echo -e "${BLUE}${BOLD}================================================================================${NC}"
+echo -e "${BLUE}${BOLD}        SAGE — Smart AICTE Governance Engine                                  ${NC}"
+echo -e "${SAFFRON}        Integrated Approval Automation, Compliance & Alert Management          ${NC}"
+echo -e "${CYAN}        SIH 2026 Problem Statement 26262 • Ministry of Education, Govt of India${NC}"
+echo -e "${BLUE}${BOLD}================================================================================${NC}"
 
 # ------------------------------------------------------------------------------
-# 1. Start / Verify PostgreSQL Database
+# 1. Pre-Flight Runtime Verification
 # ------------------------------------------------------------------------------
-echo -e "\n${C_BOLD}[1/4] Checking PostgreSQL Database (${DB_HOST}:${DB_PORT})...${C_RESET}"
+echo -e "\n${BOLD}[1/4] Checking environment & runtime prerequisites...${NC}"
 
-is_db_ready() {
-  if command -v pg_isready >/dev/null 2>&1; then
-    pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" >/dev/null 2>&1
-  else
-    # Fallback socket test via bash/nc
-    timeout 1 bash -c "cat < /dev/null > /dev/tcp/${DB_HOST}/${DB_PORT}" 2>/dev/null
-  fi
-}
-
-if is_db_ready; then
-  echo -e "${C_GREEN}✓ PostgreSQL is active and accepting connections on port ${DB_PORT}.${C_RESET}"
-else
-  echo -e "${C_YELLOW}! PostgreSQL is not currently running. Attempting startup...${C_RESET}"
-
-  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-    echo -e "Starting PostgreSQL container via docker compose..."
-    docker compose up -d postgres || sudo docker compose up -d postgres || true
-  elif command -v docker-compose >/dev/null 2>&1; then
-    echo -e "Starting PostgreSQL container via docker-compose..."
-    docker-compose up -d postgres || true
-  elif command -v systemctl >/dev/null 2>&1; then
-    echo -e "Starting system PostgreSQL service..."
-    sudo systemctl start postgresql 2>/dev/null || true
-  fi
-
-  # Wait for database readiness
-  echo -n "Waiting for PostgreSQL to be ready..."
-  READY=0
-  for _ in {1..30}; do
-    if is_db_ready; then
-      READY=1
-      break
-    fi
-    echo -n "."
-    sleep 1
-  done
-  echo ""
-
-  if [ "$READY" -eq 1 ]; then
-    echo -e "${C_GREEN}✓ PostgreSQL database is now ready.${C_RESET}"
-  else
-    echo -e "${C_RED}✗ Unable to connect to PostgreSQL at ${DB_HOST}:${DB_PORT}.${C_RESET}"
-    echo -e "Please ensure PostgreSQL is started with credentials matching .env or compose.yaml."
-    exit 1
-  fi
-fi
-
-# ------------------------------------------------------------------------------
-# 2. Check / Start MinIO Object Storage (Port: 9000)
-# ------------------------------------------------------------------------------
-echo -e "\n${C_BOLD}[2/5] Checking MinIO Object Storage (${MINIO_PORT})...${C_RESET}"
-
-is_minio_ready() {
-  curl -s -m 1 "http://localhost:${MINIO_PORT}/minio/health/live" >/dev/null 2>&1
-}
-
-if is_minio_ready; then
-  echo -e "${C_GREEN}✓ MinIO Object Storage is active on port ${MINIO_PORT}.${C_RESET}"
-else
-  echo -e "${C_YELLOW}! MinIO is not running. Attempting startup...${C_RESET}"
-
-  MINIO_BIN="$HOME/.local/bin/minio"
-  if [ ! -x "$MINIO_BIN" ] && command -v minio >/dev/null 2>&1; then
-    MINIO_BIN="$(command -v minio)"
-  fi
-
-  if [ -x "$MINIO_BIN" ]; then
-    MINIO_DATA_DIR="${HOME}/.sage_minio_data"
-    mkdir -p "$MINIO_DATA_DIR"
-    export MINIO_ROOT_USER="${MINIO_ACCESS_KEY:-sage_minio_admin}"
-    export MINIO_ROOT_PASSWORD="${MINIO_SECRET_KEY:-sage_minio_secret_2026}"
-    "$MINIO_BIN" server "$MINIO_DATA_DIR" --address ":${MINIO_PORT}" --console-address ":${MINIO_CONSOLE_PORT}" > /tmp/minio_sage.log 2>&1 &
-    MINIO_PID=$!
-    echo -e "MinIO launched locally (PID: ${MINIO_PID})..."
-  elif command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-    echo -e "Starting MinIO container via docker compose..."
-    docker compose up -d minio || sudo docker compose up -d minio || true
-  fi
-
-  # Wait for MinIO readiness
-  echo -n "Waiting for MinIO to become ready..."
-  MINIO_READY=0
-  for _ in {1..20}; do
-    if is_minio_ready; then
-      MINIO_READY=1
-      break
-    fi
-    echo -n "."
-    sleep 1
-  done
-  echo ""
-
-  if [ "$MINIO_READY" -eq 1 ]; then
-    echo -e "${C_GREEN}✓ MinIO Object Storage is now ready on port ${MINIO_PORT}.${C_RESET}"
-  else
-    echo -e "${C_YELLOW}! MinIO startup timed out; proceeding (bucket will be auto-created when accessible).${C_RESET}"
-  fi
-fi
-
-# ------------------------------------------------------------------------------
-# 3. Start Spring Boot Backend
-# ------------------------------------------------------------------------------
-echo -e "\n${C_BOLD}[3/5] Starting Spring Boot Backend API (Port: ${SERVER_PORT})...${C_RESET}"
-
-# Free port 8080 if an old instance is lingering
-if command -v fuser >/dev/null 2>&1; then
-  fuser -k "${SERVER_PORT}/tcp" 2>/dev/null || true
-elif command -v lsof >/dev/null 2>&1; then
-  OLD_PID=$(lsof -ti:"${SERVER_PORT}" 2>/dev/null || true)
-  if [ -n "$OLD_PID" ]; then
-    kill -9 "$OLD_PID" 2>/dev/null || true
-  fi
-fi
-
-# Launch backend in background
-./mvnw spring-boot:run &
-BACKEND_PID=$!
-echo -e "Spring Boot starting in background (PID: ${BACKEND_PID})..."
-
-# Wait for backend health check
-echo -n "Waiting for Backend API to become healthy..."
-BACKEND_READY=0
-for _ in {1..60}; do
-  HEALTH_STATUS=$(curl -s "http://localhost:${SERVER_PORT}/api/v1/health" 2>/dev/null | grep -o '"status":"UP"' || true)
-  if [ -n "$HEALTH_STATUS" ]; then
-    BACKEND_READY=1
-    break
-  fi
-  if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
-    echo -e "\n${C_RED}✗ Spring Boot process exited unexpectedly. Check logs for details.${C_RESET}"
-    exit 1
-  fi
-  echo -n "."
-  sleep 1
-done
-echo ""
-
-if [ "$BACKEND_READY" -eq 1 ]; then
-  echo -e "${C_GREEN}✓ Backend is healthy and running on http://localhost:${SERVER_PORT}${C_RESET}"
-else
-  echo -e "${C_RED}✗ Backend health check timed out on http://localhost:${SERVER_PORT}/api/v1/health${C_RESET}"
+# Check Java
+if ! command -v java >/dev/null 2>&1; then
+  echo -e "${RED}[ERROR] Java runtime not found. Java 21 is required.${NC}"
   exit 1
 fi
+JAVA_VER="$(java -version 2>&1 | head -n 1 | awk -F '"' '{print $2}')"
+echo -e "  ${GREEN}✔${NC} Java Runtime    : ${BOLD}${JAVA_VER}${NC}"
 
-# ------------------------------------------------------------------------------
-# 4. Start Vite React User Frontend (Port: 5173)
-# ------------------------------------------------------------------------------
-echo -e "\n${C_BOLD}[4/5] Starting Vite React User Frontend (Port: ${FRONTEND_PORT})...${C_RESET}"
-
-# Free frontend port if lingering
-if command -v fuser >/dev/null 2>&1; then
-  fuser -k "${FRONTEND_PORT}/tcp" 2>/dev/null || true
+# Check Python
+if ! command -v python3 >/dev/null 2>&1; then
+  echo -e "${RED}[ERROR] Python 3 not found. Python 3.11+ is required.${NC}"
+  exit 1
 fi
+PYTHON_VER="$(python3 --version 2>&1)"
+echo -e "  ${GREEN}✔${NC} Python Engine   : ${BOLD}${PYTHON_VER}${NC}"
 
-cd "$PROJECT_ROOT/frontend"
-
-# Ensure dependencies are installed
-if [ ! -d "node_modules" ]; then
-  echo -e "Installing user frontend dependencies..."
-  npm install
+# Check Node / npm
+if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+  echo -e "${RED}[ERROR] Node.js or npm not found. Node.js 18+ is required.${NC}"
+  exit 1
 fi
+NODE_VER="$(node -v)"
+NPM_VER="$(npm -v)"
+echo -e "  ${GREEN}✔${NC} Node & npm      : ${BOLD}Node ${NODE_VER} / npm ${NPM_VER}${NC}"
 
-# Start frontend development server in background
-npm run dev -- --host 0.0.0.0 --port "${FRONTEND_PORT}" --force &
-FRONTEND_PID=$!
-cd "$PROJECT_ROOT"
+# Ensure backend mvnw executable
+chmod +x "${ROOT_DIR}/backend/mvnw" 2>/dev/null || true
+chmod +x "${ROOT_DIR}/backend/run.sh" 2>/dev/null || true
 
-echo -e "User Frontend starting in background (PID: ${FRONTEND_PID})..."
-
-# Wait for frontend port
-echo -n "Waiting for User Frontend to respond..."
-FRONTEND_READY=0
-for _ in {1..20}; do
-  if curl -s -I "http://localhost:${FRONTEND_PORT}" 2>/dev/null | grep -q "HTTP/"; then
-    FRONTEND_READY=1
-    break
+# Check ports
+for PORT in 8000 8080 5173; do
+  if command -v fuser >/dev/null 2>&1; then
+    if fuser "${PORT}/tcp" >/dev/null 2>&1; then
+      echo -e "  ${SAFFRON}! Port ${PORT} currently occupied. Freeing port...${NC}"
+      fuser -k -9 "${PORT}/tcp" 2>/dev/null || true
+      sleep 0.5
+    fi
+  else
+    EXISTING="$(lsof -ti :${PORT} 2>/dev/null || true)"
+    if [ -n "${EXISTING}" ]; then
+      echo -e "  ${SAFFRON}! Port ${PORT} currently occupied. Freeing port...${NC}"
+      kill -9 ${EXISTING} 2>/dev/null || true
+      sleep 0.5
+    fi
   fi
-  if ! kill -0 "$FRONTEND_PID" 2>/dev/null; then
-    echo -e "\n${C_RED}✗ User Frontend process exited unexpectedly.${C_RESET}"
-    exit 1
-  fi
-  echo -n "."
-  sleep 1
 done
-echo ""
 
-if [ "$FRONTEND_READY" -eq 1 ]; then
-  echo -e "${C_GREEN}✓ User Frontend is accessible on http://localhost:${FRONTEND_PORT}${C_RESET}"
+# ------------------------------------------------------------------------------
+# 2. Dependency Checks & Setup
+# ------------------------------------------------------------------------------
+echo -e "\n${BOLD}[2/4] Verifying project dependencies...${NC}"
+
+# Automation venv
+if [ ! -d "${ROOT_DIR}/automation/venv" ]; then
+  echo -e "  ${SAFFRON}• Setting up Python virtual environment (automation/venv)...${NC}"
+  python3 -m venv "${ROOT_DIR}/automation/venv"
+  "${ROOT_DIR}/automation/venv/bin/pip" install --upgrade pip >/dev/null 2>&1
+  "${ROOT_DIR}/automation/venv/bin/pip" install -r "${ROOT_DIR}/automation/requirements.txt" >/dev/null 2>&1
+  echo -e "  ${GREEN}✔${NC} Python venv initialized"
+else
+  echo -e "  ${GREEN}✔${NC} Python automation venv present"
+fi
+
+# Frontend node_modules
+if [ ! -d "${ROOT_DIR}/frontend/node_modules" ]; then
+  echo -e "  ${SAFFRON}• Installing frontend npm dependencies...${NC}"
+  (cd "${ROOT_DIR}/frontend" && npm install >/dev/null 2>&1)
+  echo -e "  ${GREEN}✔${NC} Frontend node_modules installed"
+else
+  echo -e "  ${GREEN}✔${NC} Frontend node_modules present"
 fi
 
 # ------------------------------------------------------------------------------
-# 5. Start SAGE Admin Panel (Port: 5174)
+# 3. Starting Services
 # ------------------------------------------------------------------------------
-echo -e "\n${C_BOLD}[5/5] Starting SAGE Admin Panel (Port: ${ADMIN_PORT})...${C_RESET}"
+echo -e "\n${BOLD}[3/4] Starting SAGE application services in parallel...${NC}"
 
-# Free admin port if lingering
-if command -v fuser >/dev/null 2>&1; then
-  fuser -k "${ADMIN_PORT}/tcp" 2>/dev/null || true
-fi
+# Start Automation Engine (Port 8000)
+echo -e "  ${CYAN}▶ Launching Python Automation & OCR Engine (port 8000)...${NC}"
+(
+  cd "${ROOT_DIR}/automation"
+  exec "${ROOT_DIR}/automation/venv/bin/uvicorn" app.main:app --host 0.0.0.0 --port 8000
+) > "${AUTOMATION_LOG}" 2>&1 &
+PID_AUTOMATION=$!
 
-cd "$PROJECT_ROOT/admin"
+# Start Spring Boot Backend (Port 8080)
+echo -e "  ${BLUE}▶ Launching Spring Boot Core API (port 8080)...${NC}"
+(
+  cd "${ROOT_DIR}/backend"
+  exec ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+) > "${BACKEND_LOG}" 2>&1 &
+PID_BACKEND=$!
 
-# Ensure dependencies are installed
-if [ ! -d "node_modules" ]; then
-  echo -e "Installing admin panel dependencies..."
-  npm install
-fi
-
-# Start admin development server explicitly on ADMIN_PORT with strictPort
-npm run dev -- --host 0.0.0.0 --port "${ADMIN_PORT}" --strictPort --force &
-ADMIN_PID=$!
-cd "$PROJECT_ROOT"
-
-echo -e "Admin Panel starting in background (PID: ${ADMIN_PID})..."
-
-# Wait for admin panel port
-echo -n "Waiting for Admin Panel to respond..."
-ADMIN_READY=0
-for _ in {1..20}; do
-  if curl -s -I "http://localhost:${ADMIN_PORT}" 2>/dev/null | grep -q "HTTP/"; then
-    ADMIN_READY=1
-    break
-  fi
-  if ! kill -0 "$ADMIN_PID" 2>/dev/null; then
-    echo -e "\n${C_RED}✗ Admin Panel process exited unexpectedly.${C_RESET}"
-    exit 1
-  fi
-  echo -n "."
-  sleep 1
-done
-echo ""
-
-if [ "$ADMIN_READY" -eq 1 ]; then
-  echo -e "${C_GREEN}✓ Admin Panel is accessible on http://localhost:${ADMIN_PORT}${C_RESET}"
-fi
+# Start Vite Frontend (Port 5173)
+echo -e "  ${GREEN}▶ Launching React Vite Web Portal (port 5173)...${NC}"
+(
+  cd "${ROOT_DIR}/frontend"
+  exec npm run dev
+) > "${FRONTEND_LOG}" 2>&1 &
+PID_FRONTEND=$!
 
 # ------------------------------------------------------------------------------
-# Platform Ready Summary
+# 4. Service Health Polling
 # ------------------------------------------------------------------------------
-echo -e "\n${C_BOLD}${C_GREEN}==============================================================================${C_RESET}"
-echo -e "${C_BOLD}${C_GREEN}    🚀 SAGE — Institutional Approval & Compliance Platform is FULLY OPERATIONAL${C_RESET}"
-echo -e "${C_BOLD}${C_GREEN}==============================================================================${C_RESET}"
-echo -e "${C_BOLD}• User Portal UI:${C_RESET}     ${C_CYAN}http://localhost:${FRONTEND_PORT}${C_RESET}"
-echo -e "${C_BOLD}• SAGE Admin Panel:${C_RESET}   ${C_CYAN}http://localhost:${ADMIN_PORT}${C_RESET}"
-echo -e "${C_BOLD}• Backend REST API:${C_RESET}   ${C_CYAN}http://localhost:${SERVER_PORT}${C_RESET}"
-echo -e "${C_BOLD}• MinIO Object Storage:${C_RESET} ${C_CYAN}http://localhost:${MINIO_PORT}${C_RESET} (Console: ${MINIO_CONSOLE_PORT})"
-echo -e "${C_BOLD}• Swagger OpenAPI UI:${C_RESET} ${C_CYAN}http://localhost:${SERVER_PORT}/swagger-ui.html${C_RESET}"
-echo -e "${C_BOLD}• Health Endpoint:${C_RESET}    ${C_CYAN}http://localhost:${SERVER_PORT}/api/v1/health${C_RESET}"
-echo -e "${C_BOLD}• PostgreSQL DB:${C_RESET}      ${C_CYAN}localhost:${DB_PORT}/${DB_NAME}${C_RESET} (User: ${DB_USER})"
-echo -e "------------------------------------------------------------------------------"
-echo -e "${C_YELLOW}Press Ctrl+C at any time to shut down all services gracefully.${C_RESET}"
-echo -e "------------------------------------------------------------------------------\n"
+echo -e "\n${BOLD}[4/4] Waiting for services to become healthy & ready...${NC}"
 
-# Keep the script running and streaming service output until Ctrl+C
-wait "$BACKEND_PID" "$FRONTEND_PID" "$ADMIN_PID"
+wait_for_service() {
+  local NAME="$1"
+  local URL="$2"
+  local TIMEOUT="${3:-45}"
+  local ELAPSED=0
+
+  while [ ${ELAPSED} -lt ${TIMEOUT} ]; do
+    if curl -s -f -o /dev/null "${URL}" 2>/dev/null; then
+      echo -e "  ${GREEN}✔ ${NAME} is healthy and responding!${NC}"
+      return 0
+    fi
+    sleep 1
+    ELAPSED=$((ELAPSED + 1))
+    echo -ne "  ${MUTED}Waiting for ${NAME}... (${ELAPSED}s)${NC}\r"
+  done
+
+  echo -e "  ${RED}✖ Timed out waiting for ${NAME} at ${URL}${NC}"
+  return 1
+}
+
+wait_for_service "Automation Engine" "http://localhost:8000/" 20
+wait_for_service "Spring Boot Backend" "http://localhost:8080/actuator/health" 45
+wait_for_service "React Vite Frontend" "http://localhost:5173/" 20
+
+# ------------------------------------------------------------------------------
+# Summary & Portal Dashboard Banner
+# ------------------------------------------------------------------------------
+echo -e "\n${BLUE}${BOLD}================================================================================${NC}"
+echo -e "${GREEN}${BOLD}             SAGE PLATFORM IS OPERATIONAL & READY TO USE                        ${NC}"
+echo -e "${BLUE}${BOLD}================================================================================${NC}"
+
+echo -e "\n${BOLD}Service Access URLs:${NC}"
+echo -e "  • ${BOLD}Web Portal (UI)${NC}      : ${GREEN}http://localhost:5173${NC}"
+echo -e "  • ${BOLD}Core REST API${NC}        : ${CYAN}http://localhost:8080${NC}"
+echo -e "  • ${BOLD}Interactive Swagger${NC}  : ${CYAN}http://localhost:8080/swagger-ui.html${NC}"
+echo -e "  • ${BOLD}Automation Service${NC}   : ${CYAN}http://localhost:8000/docs${NC}"
+echo -e "  • ${BOLD}Actuator Health${NC}      : ${CYAN}http://localhost:8080/actuator/health${NC}"
+
+echo -e "\n${BOLD}Pre-Seeded Statutory Test Accounts (Password: ${GREEN}Password123!${NC}${BOLD}):${NC}"
+echo -e "  ${CYAN}admin@aicte.gov.in${NC}        ${MUTED}→${NC} AICTE Central Administrator (Full Global Oversight)"
+echo -e "  ${CYAN}regional@aicte.gov.in${NC}     ${MUTED}→${NC} AICTE Regional Officer (Northern Region / Scrutiny Queue)"
+echo -e "  ${CYAN}officer@delhi-tech.edu${NC}    ${MUTED}→${NC} Technical Institution Representative (PID: 1-500123498)"
+echo -e "  ${CYAN}compliance@aicte.gov.in${NC}   ${MUTED}→${NC} Compliance Officer (Continuous Surveillance / APH Scans)"
+echo -e "  ${CYAN}auditor@aicte.gov.in${NC}      ${MUTED}→${NC} Regulatory Reviewer & Auditor (Immutable Audit Trail)"
+
+echo -e "\n${BOLD}Logs:${NC}"
+echo -e "  • Backend    : tail -f ${BACKEND_LOG}"
+echo -e "  • Automation : tail -f ${AUTOMATION_LOG}"
+echo -e "  • Frontend   : tail -f ${FRONTEND_LOG}"
+
+echo -e "\n${SAFFRON}${BOLD}All services running in foreground. Press [Ctrl+C] to stop all processes.${NC}\n"
+
+# Wait indefinitely for signal
+wait
